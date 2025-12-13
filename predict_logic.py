@@ -1,57 +1,62 @@
-import pickle
+import joblib
 import numpy as np
 
-# Load models
-cost_model = pickle.load(open("cost_model.pkl", "rb"))
-delay_model = pickle.load(open("delay_model.pkl", "rb"))
-columns = pickle.load(open("model_columns.pkl", "rb"))
+# Load models safely
+cost_model = joblib.load("cost_model.pkl")
+delay_model = joblib.load("delay_model.pkl")
+model_columns = joblib.load("model_columns.pkl")
 
-def predict(project_type, project_size, area, duration, workers):
+def predict(project_type, project_size, area_m2, duration_months, workers):
+    # Build input row
+    data = {
+        "area_m2": area_m2,
+        "duration_months": duration_months,
+        "workers": workers
+    }
 
-    x = np.zeros(len(columns))
-    x[columns.index("area_m2")] = area
-    x[columns.index("duration_months")] = duration
-    x[columns.index("workers")] = workers
+    for col in model_columns:
+        if col.startswith("project_type_"):
+            data[col] = 1 if col == f"project_type_{project_type}" else 0
+        elif col.startswith("project_size_"):
+            data[col] = 1 if col == f"project_size_{project_size}" else 0
 
-    if f"type_{project_type}" in columns:
-        x[columns.index(f"type_{project_type}")] = 1
+    X = np.array([[data.get(col, 0) for col in model_columns]])
 
-    if f"size_{project_size}" in columns:
-        x[columns.index(f"size_{project_size}")] = 1
+    estimated_cost = float(cost_model.predict(X)[0])
+    delay_probability = float(delay_model.predict(X)[0])
 
-    estimated_cost = float(cost_model.predict([x])[0])
-    delay_prob = round(float(delay_model.predict_proba([x])[0][1]) * 100, 1)
-
-    if delay_prob < 30:
+    # Risk level
+    if delay_probability < 30:
         risk = "Low"
-    elif delay_prob < 60:
+    elif delay_probability < 60:
         risk = "Medium"
     else:
         risk = "High"
 
+    # Friendly recommendations
     recommendations = []
-
     if risk == "High":
         recommendations = [
-            "Adding a little extra time to the schedule could reduce pressure later on.",
-            "You might consider increasing the workforce during busy phases.",
-            "Ordering materials early can help avoid unexpected waiting.",
-            "Breaking the project into smaller milestones may make tracking easier."
+            "Try adding a small time buffer — it gives the team breathing room ⏱️",
+            "If possible, add 1–2 extra workers during busy phases 👷",
+            "Ordering materials early can save a lot of stress later 📦",
+            "Breaking tasks into weekly goals helps keep things on track ✅"
         ]
     elif risk == "Medium":
         recommendations = [
-            "The plan looks reasonable, but keeping a small time buffer could help.",
-            "Regular progress checks may prevent minor delays from growing."
+            "A short buffer in the schedule could improve stability 👍",
+            "Double-check supplier timelines to avoid surprises 📋",
+            "Weekly check-ins help catch issues early 🔍"
         ]
     else:
         recommendations = [
-            "The project setup looks balanced.",
-            "Just keep monitoring progress as work moves forward."
+            "Your plan looks solid — keep monitoring progress 👌",
+            "Stick to the schedule and document changes 🗂️"
         ]
 
     return {
-        "estimated_cost": estimated_cost,
-        "delay_probability": delay_prob,
+        "estimated_cost": round(estimated_cost, 0),
+        "delay_probability": round(delay_probability, 1),
         "risk_level": risk,
         "recommendations": recommendations
     }
