@@ -1,153 +1,111 @@
-import pandas as pd
-import joblib
-import streamlit as st
+import pickle
+import numpy as np
 
-@st.cache_resource
-def load_models():
-    cost_model = joblib.load("cost_model.pkl")
-    delay_model = joblib.load("delay_model.pkl")
-    model_columns = joblib.load("model_columns.pkl")
-    return cost_model, delay_model, model_columns
+# -------------------------------
+# Load models
+# -------------------------------
+cost_model = pickle.load(open("cost_model.pkl", "rb"))
+delay_model = pickle.load(open("delay_model.pkl", "rb"))
+model_columns = pickle.load(open("model_columns.pkl", "rb"))
 
-cost_model, delay_model, model_columns = load_models()
+# -------------------------------
+# Helper functions
+# -------------------------------
+def calculate_pressure(area, workers, duration):
+    return (area / max(workers, 1)) / max(duration, 0.5)
 
-def _make_features(project_type, project_size, area_m2, duration_months, workers):
-    row = pd.DataFrame([{
-        "project_type": project_type,
-        "project_size": project_size,
-        "area_m2": area_m2,
-        "duration_months": duration_months,
-        "workers": workers
-    }])
-    row = pd.get_dummies(row)
-    return row.reindex(columns=model_columns, fill_value=0)
-
-def _delay_probability(project_type, project_size, area_m2, duration_months, workers):
-    X = _make_features(project_type, project_size, area_m2, duration_months, workers)
-
-    proba = delay_model.predict_proba(X)[0]
-    delay_index = list(delay_model.classes_).index(1)  # class 1 = delay
-    p = float(proba[delay_index]) * 100
-
-    # قواعد واقعية عامة
-    if project_size == "Large" and workers <= 3:
-        p = max(p, 70.0)
-    if project_size == "Medium" and workers <= 2:
-        p = max(p, 55.0)
-
-    # قواعد واقعية للكهرباء
-    if project_type == "Electrical Works":
-        if project_size == "Large" and area_m2 >= 300 and workers <= 6:
-            p = max(p, 65.0)
-        elif project_size == "Medium" and area_m2 >= 200 and workers <= 4:
-            p = max(p, 50.0)
-
-    return min(p, 95.0)
-
-def _risk_level(delay_prob):
+def classify_risk(delay_prob):
     if delay_prob < 30:
         return "Low"
-    elif delay_prob < 60:
+    elif delay_prob < 55:
         return "Medium"
-    return "High"
-
-def _find_target_workers(project_type, project_size, area_m2, duration_months, workers, target_prob, max_extra_workers=15):
-    for w in range(workers + 1, workers + max_extra_workers + 1):
-        p = _delay_probability(project_type, project_size, area_m2, duration_months, w)
-        if p <= target_prob:
-            return w
-    return None
-
-def _find_target_duration(project_type, project_size, area_m2, duration_months, workers, target_prob, max_extra_months=6):
-    d = duration_months
-    while d <= duration_months + max_extra_months:
-        p = _delay_probability(project_type, project_size, area_m2, d, workers)
-        if p <= target_prob:
-            return round(d, 1)
-        d += 0.5
-    return None
-
-def _calibrate_cost(project_type, project_size, area_m2, estimated_cost):
-    """
-    معايرة تكلفة بسيطة لضمان واقعية الأرقام حسب نوع المشروع.
-    (بدون مبالغة وبدون أرقام خيالية)
-    """
-    # إذا ما فيه مساحة (مثل FTTH/شاشات) لا نطبّق معايرة m²
-    if area_m2 <= 0:
-        return estimated_cost
-
-    # نطاقات تقريبية (SAR لكل m²) — هدفها تمنع الأرقام غير المنطقية مثل 253k لـ 500m² Fit-Out
-    if project_type == "Commercial Fit-Out":
-        # Medium/Large fit-out عادة أعلى من التشطيبات
-        if project_size == "Large":
-            min_pm2, max_pm2 = 4200, 7000
-        elif project_size == "Medium":
-            min_pm2, max_pm2 = 3500, 6000
-        else:
-            min_pm2, max_pm2 = 2800, 5200
-
-        min_cost = area_m2 * min_pm2
-        max_cost = area_m2 * max_pm2
-        return max(min_cost, min(estimated_cost, max_cost))
-
-    if project_type == "Building Finishing":
-        # تشطيبات أقل
-        min_pm2, max_pm2 = 600, 1400
-        min_cost = area_m2 * min_pm2
-        max_cost = area_m2 * max_pm2
-        return max(min_cost, min(estimated_cost, max_cost))
-
-    if project_type == "Residential Construction":
-        # إنشاء (تقريبي) — نتركه أوسع
-        min_pm2, max_pm2 = 2500, 5500
-        min_cost = area_m2 * min_pm2
-        max_cost = area_m2 * max_pm2
-        return max(min_cost, min(estimated_cost, max_cost))
-
-    if project_type == "Non-Residential Construction":
-        min_pm2, max_pm2 = 3000, 6500
-        min_cost = area_m2 * min_pm2
-        max_cost = area_m2 * max_pm2
-        return max(min_cost, min(estimated_cost, max_cost))
-
-    if project_type == "HVAC Installation":
-        # (تغطي نفس اللي كنا نسويه)
-        min_pm2, max_pm2 = 1800, 4500
-        min_cost = area_m2 * min_pm2
-        max_cost = area_m2 * max_pm2
-        return max(min_cost, min(estimated_cost, max_cost))
-
-    # باقي الأنواع نخليها بدون معايرة (أو نضيف لاحقًا لو لاحظتي شذوذ)
-    return estimated_cost
-
-def predict(project_type, project_size, area_m2, duration_months, workers):
-    X = _make_features(project_type, project_size, area_m2, duration_months, workers)
-
-    estimated_cost = float(cost_model.predict(X)[0])
-    estimated_cost = _calibrate_cost(project_type, project_size, area_m2, estimated_cost)
-
-    delay_prob = _delay_probability(project_type, project_size, area_m2, duration_months, workers)
-    risk = _risk_level(delay_prob)
-
-    recommendations = []
-
-    if risk == "Low":
-        recommendations.append("وضع المشروع الحالي مستقر. يُنصح بالاستمرار في المتابعة الدورية لضمان الالتزام بالخطة.")
     else:
-        w_target = _find_target_workers(project_type, project_size, area_m2, duration_months, workers, 30)
-        if w_target:
-            diff = w_target - workers
-            recommendations.append(f"زيادة عدد العمال بحوالي {diff} عمال قد تساهم في تحسين وتيرة التنفيذ وتقليل الضغط خلال مراحل العمل.")
+        return "High"
 
-        d_target = _find_target_duration(project_type, project_size, area_m2, duration_months, workers, 30)
-        if d_target and d_target > duration_months:
-            recommendations.append(f"تمديد مدة التنفيذ من {duration_months} إلى نحو {d_target} أشهر قد يكون خيارًا أفضل لتقليل احتمالية التأخير.")
+def generate_recommendations(area, workers, duration, risk):
+    recs = []
 
-        recommendations.append("يُفضل البدء بالأنشطة الحرجة مبكرًا، مثل توريد المواد واعتمادها، لتجنب أي تعطل غير متوقع.")
+    # قيم تقريبية شائعة في مشاريع مشابهة
+    ideal_workers = max(5, int(area / 40))
+    ideal_duration = max(1.5, area / 120)
+
+    if risk == "High":
+        if workers < ideal_workers:
+            recs.append(
+                f"عدد العمال الحالي أقل من المعتاد لمشاريع بهذا الحجم. رفع العدد بشكل تدريجي ليكون قريب من {ideal_workers} عامل قد يساعد في تخفيف ضغط العمل."
+            )
+
+        if duration < ideal_duration:
+            recs.append(
+                f"مدة التنفيذ الحالية تبدو قصيرة نسبيًا. لو كانت المدة بين {round(ideal_duration,1)} و {round(ideal_duration+1,1)} أشهر قد يكون التنفيذ أسهل وأكثر استقرارًا."
+            )
+
+        recs.append(
+            "من الأفضل ترتيب الأعمال الأساسية مبكرًا مثل توريد المواد والموافقات لتجنب أي تأخير غير متوقع."
+        )
+
+    elif risk == "Medium":
+        recs.append(
+            "الوضع الحالي مقبول، لكن المتابعة المنتظمة تساعد في اكتشاف أي ضغط قبل أن يتحول إلى تأخير فعلي."
+        )
+
+        if workers < ideal_workers:
+            recs.append(
+                "إذا لاحظت ضغط في الجدول، دعم الفريق بعدد بسيط من العمال خلال المراحل المهمة قد يعطي مرونة أفضل."
+            )
+
+    else:
+        recs.append(
+            "الخطة الحالية متوازنة بشكل عام. الاستمرار بنفس الترتيب مع متابعة دورية يكفي للحفاظ على سير المشروع."
+        )
+
+    return recs
+
+# -------------------------------
+# Main prediction function
+# -------------------------------
+def predict(project_type, project_size, area_m2, duration_months, workers):
+
+    # --------- Cost Prediction ---------
+    X_cost = np.zeros(len(model_columns))
+    for i, col in enumerate(model_columns):
+        if col == "area_m2":
+            X_cost[i] = area_m2
+        elif col == "duration_months":
+            X_cost[i] = duration_months
+        elif col == "workers":
+            X_cost[i] = workers
+        elif col == f"project_type_{project_type}":
+            X_cost[i] = 1
+        elif col == f"project_size_{project_size}":
+            X_cost[i] = 1
+
+    estimated_cost = float(cost_model.predict([X_cost])[0])
+
+    # --------- Delay Prediction (Hybrid) ---------
+    base_delay = float(delay_model.predict_proba([X_cost])[0][1] * 100)
+
+    pressure = calculate_pressure(area_m2, workers, duration_months)
+
+    # تعديل النسبة بناءً على ضغط المشروع
+    if pressure > 12:
+        adjusted_delay = max(base_delay, 60 + (pressure - 12) * 2)
+    elif pressure > 8:
+        adjusted_delay = max(base_delay, 40 + (pressure - 8) * 2)
+    else:
+        adjusted_delay = min(base_delay, 25)
+
+    delay_probability = round(min(adjusted_delay, 90), 1)
+    risk_level = classify_risk(delay_probability)
+
+    # --------- Recommendations ---------
+    recommendations = generate_recommendations(
+        area_m2, workers, duration_months, risk_level
+    )
 
     return {
-        "estimated_cost": round(estimated_cost, 0),
-        "delay_probability": round(delay_prob, 1),
-        "risk_level": risk,
+        "estimated_cost": estimated_cost,
+        "delay_probability": delay_probability,
+        "risk_level": risk_level,
         "recommendations": recommendations
     }
