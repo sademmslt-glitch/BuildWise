@@ -12,13 +12,16 @@ st.set_page_config(
 )
 
 # ---------------------------------
-# Session State (Storage)
+# Session State
 # ---------------------------------
-if "projects" not in st.session_state:
-    st.session_state.projects = []
+if "predicted_projects" not in st.session_state:
+    st.session_state.predicted_projects = []
+
+if "company_projects" not in st.session_state:
+    st.session_state.company_projects = []
 
 # ---------------------------------
-# Sidebar Navigation
+# Sidebar
 # ---------------------------------
 st.sidebar.title("🏗️ BuildWise")
 page = st.sidebar.radio("Navigate", ["User", "Admin"])
@@ -39,7 +42,6 @@ PROJECT_TYPES = [
 ]
 
 PROJECT_SIZES = ["Small", "Medium", "Large"]
-
 ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "buildwise123")
 
 # =================================
@@ -67,9 +69,10 @@ if page == "User":
                 workers
             )
 
-        # Save project for Admin view
-        st.session_state.projects.append({
+        # Save predicted project
+        st.session_state.predicted_projects.append({
             "Project Type": project_type,
+            "Project Size": project_size,
             "Area (m²)": area_m2,
             "Duration (months)": duration_months,
             "Workers": workers,
@@ -78,9 +81,7 @@ if page == "User":
             "Risk Level": result["risk_level"]
         })
 
-        # ---------------------------------
-        # Results
-        # ---------------------------------
+        # ---------------- Results ----------------
         st.subheader("Project Results")
 
         st.metric(
@@ -93,7 +94,6 @@ if page == "User":
             f"{result['delay_probability']}%"
         )
 
-        # Risk Color
         if result["risk_level"] == "Low":
             st.success("🟢 Low Delay Risk")
         elif result["risk_level"] == "Medium":
@@ -101,11 +101,7 @@ if page == "User":
         else:
             st.error("🔴 High Delay Risk")
 
-        # ---------------------------------
-        # Recommendations
-        # ---------------------------------
         st.subheader("What you can do")
-
         for rec in result["recommendations"]:
             st.write(f"• {rec}")
 
@@ -125,34 +121,45 @@ else:
     st.success("Welcome, Admin")
 
     # ---------------------------------
-    # Overview
+    # ANALYTICAL TABLE (Predictions)
     # ---------------------------------
-    st.subheader("Overview")
+    st.subheader("📊 Predicted Projects Analysis")
 
-    if st.session_state.projects:
-        df = pd.DataFrame(st.session_state.projects)
+    if st.session_state.predicted_projects:
+        df_pred = pd.DataFrame(st.session_state.predicted_projects)
 
-        total = len(df)
-        high = len(df[df["Risk Level"] == "High"])
-        medium = len(df[df["Risk Level"] == "Medium"])
-        low = len(df[df["Risk Level"] == "Low"])
+        # Overview Metrics
+        total = len(df_pred)
+        high = len(df_pred[df_pred["Risk Level"] == "High"])
+        medium = len(df_pred[df_pred["Risk Level"] == "Medium"])
+        low = len(df_pred[df_pred["Risk Level"] == "Low"])
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total Projects", total)
+        c1.metric("Total Predicted", total)
         c2.metric("High Risk", high)
         c3.metric("Medium Risk", medium)
         c4.metric("Low Risk", low)
 
-        st.subheader("📋 Analyzed Projects")
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df_pred, use_container_width=True)
 
     else:
-        st.info("No projects analyzed yet.")
+        st.info("No predicted projects yet.")
 
     # ---------------------------------
-    # Add Company Project (Mock)
+    # COMPANY PROJECTS (ADMIN INPUT)
     # ---------------------------------
-    st.subheader("➕ Add Company Project (Administrative)")
+    st.subheader("🏢 Company Projects (Administrative)")
+
+    if st.session_state.company_projects:
+        df_company = pd.DataFrame(st.session_state.company_projects)
+        st.dataframe(df_company, use_container_width=True)
+    else:
+        st.info("No company projects added yet.")
+
+    # ---------------------------------
+    # ADD COMPANY PROJECT FORM
+    # ---------------------------------
+    st.subheader("➕ Add Company Project")
 
     with st.form("add_company_project"):
         p_type = st.selectbox("Project Type", PROJECT_TYPES)
@@ -160,16 +167,22 @@ else:
         p_duration = st.number_input("Duration (months)", 0.5, 60.0, 3.0, step=0.5)
         p_workers = st.number_input("Workers", 1, 500, 10)
 
+        p_cost = st.number_input(
+            "Estimated Budget (SAR)",
+            min_value=0,
+            step=10000,
+            value=500000
+        )
+
         add = st.form_submit_button("Add Project")
 
         if add:
-            st.session_state.projects.append({
+            st.session_state.company_projects.append({
                 "Project Type": p_type,
                 "Area (m²)": p_area,
                 "Duration (months)": p_duration,
                 "Workers": p_workers,
-                "Estimated Cost (SAR)": "—",
-                "Delay Probability (%)": "—",
-                "Risk Level": "Planning"
+                "Estimated Cost (SAR)": f"{p_cost:,.0f}",
+                "Status": "Planning"
             })
-            st.success("Project added successfully.")
+            st.success("Company project added successfully.")
