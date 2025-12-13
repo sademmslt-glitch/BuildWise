@@ -1,65 +1,77 @@
+import time
 import streamlit as st
 import pandas as pd
 from predict_logic import predict
 
-# ---------------- Page Config ----------------
+# --------------------
+# Page config
+# --------------------
 st.set_page_config(
     page_title="BuildWise",
     page_icon="🏗️",
     layout="centered"
 )
 
-# ---------------- Styling ----------------
+# --------------------
+# CSS Styling (خففنا التباين)
+# --------------------
 st.markdown("""
 <style>
-body {background-color:#0e1117;}
-.block-container {padding-top:2rem;}
-
+body {background-color:#0f172a;}
 .card {
-    background:#161b22;
+    background:#111827;
     padding:20px;
     border-radius:16px;
-    border:1px solid rgba(255,255,255,0.08);
+    margin-bottom:16px;
 }
-
-h1,h2,h3,h4 {color:white;}
-label, p {color:#d0d6dc;}
-
-.metric-box {
-    background:#0d1b2a;
-    padding:16px;
-    border-radius:12px;
-    text-align:center;
+h1, h2, h3, p, label {
+    color:#e5e7eb;
 }
-
-.risk-low {color:#2ecc71;}
-.risk-medium {color:#f1c40f;}
-.risk-high {color:#e74c3c;}
+.stButton>button {
+    background:#2563eb;
+    color:white;
+    border-radius:10px;
+    height:3em;
+}
+.badge {
+    padding:6px 14px;
+    border-radius:999px;
+    font-weight:600;
+}
+.low {background:#064e3b; color:#a7f3d0;}
+.medium {background:#78350f; color:#fde68a;}
+.high {background:#7f1d1d; color:#fecaca;}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- Session ----------------
+# --------------------
+# Session state for admin logs
+# --------------------
 if "logs" not in st.session_state:
     st.session_state.logs = []
 
-# ---------------- Sidebar ----------------
+# --------------------
+# Sidebar
+# --------------------
 st.sidebar.title("🏗️ BuildWise")
-page = st.sidebar.radio("Navigate", ["Predict", "Admin"])
+page = st.sidebar.radio("Navigation", ["Project Analysis", "Admin Panel"])
 
 PROJECT_TYPES = [
     "Residential Construction",
+    "Commercial Construction",
     "Building Finishing",
-    "Commercial Fit-Out",
+    "Smart Home Systems",
     "Electrical Works",
     "HVAC Installation",
-    "Smart Home Systems",
-    "Security Systems"
 ]
 
 PROJECT_SIZES = ["Small", "Medium", "Large"]
 
-# ---------------- Predict Page ----------------
-if page == "Predict":
+# =====================================================
+# MAIN USER PAGE
+# =====================================================
+if page == "Project Analysis":
+
     st.title("BuildWise")
     st.caption("Plan smarter. Build with confidence.")
 
@@ -67,66 +79,87 @@ if page == "Predict":
     st.subheader("📋 Project Details")
 
     col1, col2 = st.columns(2)
+
     with col1:
         project_type = st.selectbox("Project Type", PROJECT_TYPES)
         project_size = st.selectbox("Project Size", PROJECT_SIZES)
-        workers = st.number_input("👷 Number of Workers", 1, 300, 10)
-    with col2:
-        area_m2 = st.number_input("📐 Project Area (m²)", 50, 200000, 300)
-        duration = st.number_input("⏳ Expected Duration (months)", 0.5, 60.0, 3.0, step=0.5)
+        workers = st.number_input("👷 Number of Workers", 1, 500, 10)
 
-    analyze = st.button("🔍 Analyze Project", use_container_width=True)
+    with col2:
+        area_m2 = st.number_input("📐 Project Area (m²)", 50, 200000, 300, step=50)
+        duration_months = st.number_input("⏳ Expected Duration (months)", 0.5, 60.0, 3.0, step=0.5)
+
+    analyze = st.button("Analyze Project 🚀", use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     if analyze:
-        result = predict(project_type, project_size, area_m2, duration, workers)
+        with st.spinner("Analyzing your project..."):
+            time.sleep(0.6)
+            result = predict(
+                project_type,
+                project_size,
+                area_m2,
+                duration_months,
+                workers
+            )
 
-        risk_class = (
-            "risk-low" if result["risk_level"] == "Low"
-            else "risk-medium" if result["risk_level"] == "Medium"
-            else "risk-high"
-        )
+        risk_class = "low" if result["risk_level"] == "Low" else \
+                     "medium" if result["risk_level"] == "Medium" else "high"
 
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("📊 Insights & Results")
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("Estimated Cost (SAR)", f"{result['estimated_cost']:,.0f}")
-        c2.metric("Delay Probability", f"{result['delay_probability']}%")
-        c3.markdown(f"<h4 class='{risk_class}'>⚠️ {result['risk_level']} Risk</h4>", unsafe_allow_html=True)
+        c1.metric("💰 Estimated Cost (SAR)", f"{result['estimated_cost']:,.0f}")
+        c2.metric("⏱️ Delay Probability", f"{result['delay_probability']}%")
+        c3.markdown(
+            f"<span class='badge {risk_class}'>Risk: {result['risk_level']}</span>",
+            unsafe_allow_html=True
+        )
 
         st.subheader("💡 Recommendations")
-        for r in result["recommendations"]:
-            st.write(f"👉 {r}")
+        for rec in result["recommendations"]:
+            st.write(f"• {rec}")
 
         st.markdown('</div>', unsafe_allow_html=True)
 
+        # Save for admin
         st.session_state.logs.append({
-            "Type": project_type,
+            "Project Type": project_type,
             "Size": project_size,
             "Area": area_m2,
-            "Duration": duration,
+            "Duration": duration_months,
             "Workers": workers,
-            "Cost": result["estimated_cost"],
-            "Delay %": result["delay_probability"],
             "Risk": result["risk_level"]
         })
 
-# ---------------- Admin Page ----------------
+# =====================================================
+# ADMIN PANEL
+# =====================================================
 else:
-    st.title("🔐 Admin Dashboard")
+    st.title("🔐 Admin Panel")
 
-    password = st.text_input("Admin Password", type="password")
     ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "buildwise123")
 
+    password = st.text_input("Enter Admin Password", type="password")
+
     if password != ADMIN_PASSWORD:
-        st.warning("Enter the admin password to continue.")
+        st.warning("Access restricted.")
         st.stop()
 
-    st.success("Access granted ✔️")
+    st.success("Welcome, Admin ✅")
 
-    df = pd.DataFrame(st.session_state.logs)
-    if df.empty:
-        st.info("No predictions yet.")
-    else:
+    logs = st.session_state.logs
+
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.subheader("📈 Usage Overview")
+
+    st.metric("Total Analyses", len(logs))
+
+    if logs:
+        df = pd.DataFrame(logs)
         st.dataframe(df, use_container_width=True)
+    else:
+        st.info("No project analyses yet.")
+
+    st.markdown('</div>', unsafe_allow_html=True)
