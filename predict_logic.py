@@ -2,9 +2,9 @@ import pandas as pd
 import joblib
 import streamlit as st
 
-# ----------------------------
-# Load models once (VERY IMPORTANT)
-# ----------------------------
+# --------------------------------------------------
+# Load models ONCE only (this is the speed solution)
+# --------------------------------------------------
 @st.cache_resource
 def load_models():
     cost_model = joblib.load("cost_model.pkl")
@@ -14,9 +14,9 @@ def load_models():
 
 cost_model, delay_model, model_columns = load_models()
 
-# ----------------------------
-# Prediction function
-# ----------------------------
+# --------------------------------------------------
+# Prediction logic
+# --------------------------------------------------
 def predict(project_type, project_size, area_m2, duration_months, workers):
 
     data = {
@@ -42,22 +42,22 @@ def predict(project_type, project_size, area_m2, duration_months, workers):
     else:
         risk = "High"
 
-    # Friendly recommendations
+    # Friendly recommendations (مو رسمية)
     if risk == "High":
         recommendations = [
-            "You might want to give the schedule a little breathing room.",
-            "Having extra workers during busy weeks could really help.",
-            "Ordering materials early can save last-minute stress."
+            "The schedule feels a bit tight — adding buffer time could help.",
+            "Extra workers during peak weeks might reduce pressure.",
+            "Ordering materials early can avoid last-minute delays."
         ]
     elif risk == "Medium":
         recommendations = [
-            "Things look okay, just keep an eye on progress.",
-            "Weekly check-ins should be enough to stay on track."
+            "The plan looks reasonable, just keep tracking progress.",
+            "Weekly check-ins should help avoid surprises."
         ]
     else:
         recommendations = [
             "Everything looks smooth so far.",
-            "Just keep monitoring the project regularly."
+            "Regular monitoring should be enough to stay on track."
         ]
 
     return {
