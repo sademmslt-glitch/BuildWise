@@ -69,14 +69,22 @@ if page == "User":
                 workers
             )
 
-        # Save predicted project
+        # ---------------- Cost Range (X to Y) ----------------
+        # تقدير نطاق بسيط حول التكلفة (±10%)
+        cost = float(result["estimated_cost"])
+        margin = 0.10  # تقدرين تغيرينه إلى 0.08 أو 0.12 حسب رغبتك
+        cost_low = cost * (1 - margin)
+        cost_high = cost * (1 + margin)
+
+        # Save predicted project (for Admin analysis)
         st.session_state.predicted_projects.append({
             "Project Type": project_type,
             "Project Size": project_size,
             "Area (m²)": area_m2,
             "Duration (months)": duration_months,
             "Workers": workers,
-            "Estimated Cost (SAR)": round(result["estimated_cost"], 0),
+            "Estimated Cost (SAR)": round(cost, 0),
+            "Cost Range (SAR)": f"{cost_low:,.0f} – {cost_high:,.0f}",
             "Delay Probability (%)": result["delay_probability"],
             "Risk Level": result["risk_level"]
         })
@@ -86,8 +94,11 @@ if page == "User":
 
         st.metric(
             "Estimated Cost (SAR)",
-            f"{result['estimated_cost']:,.0f}"
+            f"{cost:,.0f}"
         )
+
+        # ✅ NEW: show cost range
+        st.caption(f"Expected Cost Range: **{cost_low:,.0f} – {cost_high:,.0f} SAR**")
 
         st.metric(
             "Delay Probability",
@@ -140,6 +151,7 @@ else:
         c3.metric("Medium Risk", medium)
         c4.metric("Low Risk", low)
 
+        # ✅ الجدول التحليلي يشمل Cost Range
         st.dataframe(df_pred, use_container_width=True)
 
     else:
