@@ -2,20 +2,30 @@ import streamlit as st
 import pandas as pd
 from predict_logic import predict
 
+# ---------------------------------
+# Page Config
+# ---------------------------------
 st.set_page_config(
     page_title="BuildWise",
     page_icon="🏗️",
     layout="centered"
 )
 
-# Session storage
-if "logs" not in st.session_state:
-    st.session_state.logs = []
+# ---------------------------------
+# Session State (Storage)
+# ---------------------------------
+if "projects" not in st.session_state:
+    st.session_state.projects = []
 
-# Sidebar
+# ---------------------------------
+# Sidebar Navigation
+# ---------------------------------
 st.sidebar.title("🏗️ BuildWise")
-page = st.sidebar.radio("Navigate", ["Project Insight", "Admin"])
+page = st.sidebar.radio("Navigate", ["User", "Admin"])
 
+# ---------------------------------
+# Constants
+# ---------------------------------
 PROJECT_TYPES = [
     "Residential Construction",
     "Commercial Fit-Out",
@@ -30,8 +40,12 @@ PROJECT_TYPES = [
 
 PROJECT_SIZES = ["Small", "Medium", "Large"]
 
-# ================= USER PAGE =================
-if page == "Project Insight":
+ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "buildwise123")
+
+# =================================
+# USER PAGE
+# =================================
+if page == "User":
 
     st.title("BuildWise")
     st.caption("Clear insights to plan your construction project with confidence.")
@@ -40,10 +54,11 @@ if page == "Project Insight":
     project_size = st.selectbox("Project Size", PROJECT_SIZES)
     area_m2 = st.number_input("Project Area (m²)", 50, 200000, 300, step=50)
     duration_months = st.number_input("Expected Duration (months)", 0.5, 60.0, 3.0, step=0.5)
-    workers = st.number_input("Number of Workers", 1, 500, 20)
+    workers = st.number_input("Number of Workers", 1, 500, 10)
 
-    if st.button("Show Insights 🚀"):
-        with st.spinner("Checking project..."):
+    if st.button("Go 🚀"):
+
+        with st.spinner("Analyzing project..."):
             result = predict(
                 project_type,
                 project_size,
@@ -52,12 +67,33 @@ if page == "Project Insight":
                 workers
             )
 
+        # Save project for Admin view
+        st.session_state.projects.append({
+            "Project Type": project_type,
+            "Area (m²)": area_m2,
+            "Duration (months)": duration_months,
+            "Workers": workers,
+            "Estimated Cost (SAR)": round(result["estimated_cost"], 0),
+            "Delay Probability (%)": result["delay_probability"],
+            "Risk Level": result["risk_level"]
+        })
+
+        # ---------------------------------
+        # Results
+        # ---------------------------------
         st.subheader("Project Results")
 
-        st.metric("Estimated Cost (SAR)", f"{result['estimated_cost']:,.0f}")
-        st.metric("Delay Probability", f"{result['delay_probability']}%")
+        st.metric(
+            "Estimated Cost (SAR)",
+            f"{result['estimated_cost']:,.0f}"
+        )
 
-        # Risk color
+        st.metric(
+            "Delay Probability",
+            f"{result['delay_probability']}%"
+        )
+
+        # Risk Color
         if result["risk_level"] == "Low":
             st.success("🟢 Low Delay Risk")
         elif result["risk_level"] == "Medium":
@@ -65,43 +101,75 @@ if page == "Project Insight":
         else:
             st.error("🔴 High Delay Risk")
 
+        # ---------------------------------
+        # Recommendations
+        # ---------------------------------
         st.subheader("What you can do")
+
         for rec in result["recommendations"]:
-            st.write("•", rec)
+            st.write(f"• {rec}")
 
-        # Save for admin
-        st.session_state.logs.append({
-            "Project Type": project_type,
-            "Area (m²)": area_m2,
-            "Duration (months)": duration_months,
-            "Workers": workers,
-            "Cost (SAR)": result["estimated_cost"],
-            "Delay %": result["delay_probability"],
-            "Risk Level": result["risk_level"]
-        })
-
-# ================= ADMIN PAGE =================
+# =================================
+# ADMIN PAGE
+# =================================
 else:
-    st.title("🔐 BuildWise – Admin Dashboard")
 
-    ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "buildwise123")
-    password = st.text_input("Admin Access Code", type="password")
+    st.title("🔐 Admin Dashboard")
+
+    password = st.text_input("Admin Password", type="password")
 
     if password != ADMIN_PASSWORD:
-        st.info("Enter admin access code to continue.")
+        st.info("Enter admin password to continue.")
         st.stop()
 
-    st.success("Welcome, Admin 👋")
+    st.success("Welcome, Admin")
 
-    if len(st.session_state.logs) == 0:
-        st.info("No project checks yet.")
-    else:
-        df = pd.DataFrame(st.session_state.logs)
+    # ---------------------------------
+    # Overview
+    # ---------------------------------
+    st.subheader("Overview")
 
-        st.subheader("Management Overview")
+    if st.session_state.projects:
+        df = pd.DataFrame(st.session_state.projects)
+
+        total = len(df)
+        high = len(df[df["Risk Level"] == "High"])
+        medium = len(df[df["Risk Level"] == "Medium"])
+        low = len(df[df["Risk Level"] == "Low"])
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Projects", total)
+        c2.metric("High Risk", high)
+        c3.metric("Medium Risk", medium)
+        c4.metric("Low Risk", low)
+
+        st.subheader("📋 Analyzed Projects")
         st.dataframe(df, use_container_width=True)
 
-        st.subheader("Admin Actions")
-        if st.button("Clear All Records"):
-            st.session_state.logs.clear()
-            st.success("All records cleared.")
+    else:
+        st.info("No projects analyzed yet.")
+
+    # ---------------------------------
+    # Add Company Project (Mock)
+    # ---------------------------------
+    st.subheader("➕ Add Company Project (Administrative)")
+
+    with st.form("add_company_project"):
+        p_type = st.selectbox("Project Type", PROJECT_TYPES)
+        p_area = st.number_input("Area (m²)", 50, 200000, 300, step=50)
+        p_duration = st.number_input("Duration (months)", 0.5, 60.0, 3.0, step=0.5)
+        p_workers = st.number_input("Workers", 1, 500, 10)
+
+        add = st.form_submit_button("Add Project")
+
+        if add:
+            st.session_state.projects.append({
+                "Project Type": p_type,
+                "Area (m²)": p_area,
+                "Duration (months)": p_duration,
+                "Workers": p_workers,
+                "Estimated Cost (SAR)": "—",
+                "Delay Probability (%)": "—",
+                "Risk Level": "Planning"
+            })
+            st.success("Project added successfully.")
