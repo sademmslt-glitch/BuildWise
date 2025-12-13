@@ -15,7 +15,7 @@ def load_models():
 cost_model, delay_model, model_columns = load_models()
 
 # -------------------------------------------------
-# Main prediction function
+# Main prediction logic
 # -------------------------------------------------
 def predict(project_type, project_size, area_m2, duration_months, workers):
 
@@ -32,18 +32,24 @@ def predict(project_type, project_size, area_m2, duration_months, workers):
     df = pd.get_dummies(df)
     df = df.reindex(columns=model_columns, fill_value=0)
 
-    # ---------------- Cost prediction ----------------
+    # ---------------- Cost prediction (base model) ----------------
     estimated_cost = float(cost_model.predict(df)[0])
 
-    # ---------------- Delay probability (CORRECT) ----------------
-    # Make sure we read the probability of class = 1 (Delayed)
+    # ---------------- HVAC COST CALIBRATION (IMPORTANT) ----------------
+    # Prevent unrealistic multi-million costs for HVAC projects
+    if project_type == "HVAC Installation":
+        min_cost = area_m2 * 1800   # conservative lower bound
+        max_cost = area_m2 * 4500   # realistic upper bound
+        estimated_cost = max(min_cost, min(estimated_cost, max_cost))
+
+    # ---------------- Delay probability (correct class index) ----------------
     proba = delay_model.predict_proba(df)[0]
     classes = delay_model.classes_
-    delay_index = list(classes).index(1)   # class "1" means delay
+    delay_index = list(classes).index(1)   # class "1" = delayed
     delay_probability = proba[delay_index] * 100
 
     # ---------------- Sanity rules (REALISM LAYER) ----------------
-    # Extreme unrealistic cases must be corrected logically
+    # Handle unrealistic workforce vs project scale
     if project_size == "Large" and area_m2 >= 400 and workers <= 3:
         delay_probability = max(delay_probability, 75.0)
 
@@ -64,29 +70,27 @@ def predict(project_type, project_size, area_m2, duration_months, workers):
     recommendations = []
 
     if risk_level == "High":
-        # High risk needs MAJOR adjustment
         target_workers = max(int(workers * 1.5), workers + 7)
         target_duration = round(duration_months * 1.3, 1)
 
         recommendations.append(
-            f"Increase workforce to around {target_workers} workers to handle project scale properly."
+            f"Increase workforce to around {target_workers} workers to match the project scale."
         )
         recommendations.append(
             f"Extend the project duration to approximately {target_duration} months to reduce schedule pressure."
         )
         recommendations.append(
-            "Start critical activities early (materials, approvals, subcontractors)."
+            "Start critical activities early (materials procurement, approvals, subcontractors)."
         )
 
     elif risk_level == "Medium":
-        # Medium risk needs MODERATE adjustment
         target_workers = max(int(workers * 1.25), workers + 3)
 
         recommendations.append(
             f"Increase workforce to about {target_workers} workers during peak phases."
         )
         recommendations.append(
-            "Monitor progress weekly and adjust resources if delays appear."
+            "Monitor progress weekly and reallocate resources if delays appear."
         )
 
     else:  # Low risk
@@ -94,7 +98,7 @@ def predict(project_type, project_size, area_m2, duration_months, workers):
             "Current workforce and schedule are well balanced for this project."
         )
         recommendations.append(
-            "Continue regular monitoring to maintain progress."
+            "Continue regular monitoring to maintain steady progress."
         )
 
     # ---------------- Final output ----------------
