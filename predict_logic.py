@@ -1,5 +1,5 @@
 import joblib
-import numpy as np
+import pandas as pd
 
 # Load models safely
 cost_model = joblib.load("cost_model.pkl")
@@ -7,25 +7,28 @@ delay_model = joblib.load("delay_model.pkl")
 model_columns = joblib.load("model_columns.pkl")
 
 def predict(project_type, project_size, area_m2, duration_months, workers):
-    # Build input row
-    data = {
+    # Prepare input as DataFrame
+    input_dict = {
+        "project_type": project_type,
+        "project_size": project_size,
         "area_m2": area_m2,
         "duration_months": duration_months,
-        "workers": workers
+        "workers": workers,
     }
 
-    for col in model_columns:
-        if col.startswith("project_type_"):
-            data[col] = 1 if col == f"project_type_{project_type}" else 0
-        elif col.startswith("project_size_"):
-            data[col] = 1 if col == f"project_size_{project_size}" else 0
+    df = pd.DataFrame([input_dict])
 
-    X = np.array([[data.get(col, 0) for col in model_columns]])
+    # One-hot encoding
+    df = pd.get_dummies(df)
 
-    estimated_cost = float(cost_model.predict(X)[0])
-    delay_probability = float(delay_model.predict(X)[0])
+    # Align with training columns
+    df = df.reindex(columns=model_columns, fill_value=0)
 
-    # Risk level
+    # Predictions
+    estimated_cost = float(cost_model.predict(df)[0])
+    delay_probability = float(delay_model.predict(df)[0])
+
+    # Risk level logic
     if delay_probability < 30:
         risk = "Low"
     elif delay_probability < 60:
@@ -33,30 +36,29 @@ def predict(project_type, project_size, area_m2, duration_months, workers):
     else:
         risk = "High"
 
-    # Friendly recommendations
+    # Friendly recommendations (غير رسمية)
     recommendations = []
+
     if risk == "High":
         recommendations = [
-            "Try adding a small time buffer — it gives the team breathing room ⏱️",
-            "If possible, add 1–2 extra workers during busy phases 👷",
-            "Ordering materials early can save a lot of stress later 📦",
-            "Breaking tasks into weekly goals helps keep things on track ✅"
+            "Try adding a small buffer to the schedule — it can reduce pressure a lot.",
+            "Having a backup crew during busy phases might really help.",
+            "Ordering materials early can save you last-minute stress.",
         ]
     elif risk == "Medium":
         recommendations = [
-            "A short buffer in the schedule could improve stability 👍",
-            "Double-check supplier timelines to avoid surprises 📋",
-            "Weekly check-ins help catch issues early 🔍"
+            "The plan looks okay, but keeping weekly check-ins is a smart move.",
+            "Make sure key tasks don’t overlap too much.",
         ]
     else:
         recommendations = [
-            "Your plan looks solid — keep monitoring progress 👌",
-            "Stick to the schedule and document changes 🗂️"
+            "Everything looks smooth so far — just keep tracking progress regularly.",
+            "A quick weekly review should be enough to stay on track.",
         ]
 
     return {
-        "estimated_cost": round(estimated_cost, 0),
+        "estimated_cost": round(estimated_cost, 2),
         "delay_probability": round(delay_probability, 1),
         "risk_level": risk,
-        "recommendations": recommendations
+        "recommendations": recommendations,
     }
