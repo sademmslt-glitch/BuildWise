@@ -14,97 +14,146 @@ def load_models():
 
 cost_model, delay_model, model_columns = load_models()
 
-# -------------------------------------------------
-# Main prediction logic
-# -------------------------------------------------
-def predict(project_type, project_size, area_m2, duration_months, workers):
 
-    # ---------------- Prepare input ----------------
-    input_data = {
+# -------------------------------------------------
+# Helpers
+# -------------------------------------------------
+def _make_features(project_type, project_size, area_m2, duration_months, workers):
+    row = pd.DataFrame([{
         "project_type": project_type,
         "project_size": project_size,
         "area_m2": area_m2,
         "duration_months": duration_months,
         "workers": workers
-    }
+    }])
+    row = pd.get_dummies(row)
+    row = row.reindex(columns=model_columns, fill_value=0)
+    return row
 
-    df = pd.DataFrame([input_data])
-    df = pd.get_dummies(df)
-    df = df.reindex(columns=model_columns, fill_value=0)
 
-    # ---------------- Cost prediction (base model) ----------------
-    estimated_cost = float(cost_model.predict(df)[0])
+def _delay_probability(project_type, project_size, area_m2, duration_months, workers):
+    X = _make_features(project_type, project_size, area_m2, duration_months, workers)
 
-    # ---------------- HVAC COST CALIBRATION (IMPORTANT) ----------------
-    # Prevent unrealistic multi-million costs for HVAC projects
+    # Correct probability index for class=1 (Delay)
+    proba = delay_model.predict_proba(X)[0]
+    classes = delay_model.classes_
+    delay_index = list(classes).index(1)
+    p = float(proba[delay_index]) * 100
+
+    # Realism layer (edge cases)
+    if project_size == "Large" and area_m2 >= 400 and workers <= 3:
+        p = max(p, 75.0)
+    if project_size == "Medium" and area_m2 >= 250 and workers <= 2:
+        p = max(p, 60.0)
+
+    return p
+
+
+def _risk_level(delay_prob):
+    if delay_prob < 30:
+        return "Low"
+    elif delay_prob < 60:
+        return "Medium"
+    else:
+        return "High"
+
+
+def _find_target_workers(project_type, project_size, area_m2, duration_months, workers, target_prob, max_add=60):
+    """
+    Find the smallest workers number that reaches delay_probability <= target_prob
+    """
+    for w in range(workers, workers + max_add + 1):
+        p = _delay_probability(project_type, project_size, area_m2, duration_months, w)
+        if p <= target_prob:
+            return w, p
+    return None, None
+
+
+def _find_target_duration(project_type, project_size, area_m2, duration_months, workers, target_prob, max_add_months=12, step=0.5):
+    """
+    Find the smallest duration that reaches delay_probability <= target_prob
+    """
+    d = duration_months
+    end = duration_months + max_add_months
+    while d <= end:
+        p = _delay_probability(project_type, project_size, area_m2, d, workers)
+        if p <= target_prob:
+            return round(d, 1), p
+        d += step
+    return None, None
+
+
+# -------------------------------------------------
+# Main function
+# -------------------------------------------------
+def predict(project_type, project_size, area_m2, duration_months, workers):
+
+    # ---------------- Cost prediction ----------------
+    X = _make_features(project_type, project_size, area_m2, duration_months, workers)
+    estimated_cost = float(cost_model.predict(X)[0])
+
+    # Optional HVAC calibration (prevents crazy values)
     if project_type == "HVAC Installation":
-        min_cost = area_m2 * 1800   # conservative lower bound
-        max_cost = area_m2 * 4500   # realistic upper bound
+        min_cost = area_m2 * 1800
+        max_cost = area_m2 * 4500
         estimated_cost = max(min_cost, min(estimated_cost, max_cost))
 
-    # ---------------- Delay probability (correct class index) ----------------
-    proba = delay_model.predict_proba(df)[0]
-    classes = delay_model.classes_
-    delay_index = list(classes).index(1)   # class "1" = delayed
-    delay_probability = proba[delay_index] * 100
+    # ---------------- Delay probability ----------------
+    delay_prob = _delay_probability(project_type, project_size, area_m2, duration_months, workers)
+    risk = _risk_level(delay_prob)
 
-    # ---------------- Sanity rules (REALISM LAYER) ----------------
-    # Handle unrealistic workforce vs project scale
-    if project_size == "Large" and area_m2 >= 400 and workers <= 3:
-        delay_probability = max(delay_probability, 75.0)
-
-    if project_size == "Medium" and area_m2 >= 250 and workers <= 2:
-        delay_probability = max(delay_probability, 60.0)
-
-    # ---------------- Risk level ----------------
-    if delay_probability < 30:
-        risk_level = "Low"
-    elif delay_probability < 60:
-        risk_level = "Medium"
-    else:
-        risk_level = "High"
-
-    # -------------------------------------------------
-    # STRONG & EFFECTIVE RECOMMENDATIONS
-    # -------------------------------------------------
+    # ---------------- Smart recommendations (Precise) ----------------
+    # Goal: if Medium/High, propose changes that actually push the risk down.
     recommendations = []
 
-    if risk_level == "High":
-        target_workers = max(int(workers * 1.5), workers + 7)
-        target_duration = round(duration_months * 1.3, 1)
+    # Determine the next better target:
+    # - If High -> aim for <= 55% first (down to Medium), and offer option for <= 30% (Low)
+    # - If Medium -> aim for <= 30% (Low)
+    if risk == "Low":
+        recommendations.append("خطتك حلوة 👍 كمّلي نفس الأسلوب وراقبي التقدم أسبوعيًا.")
+    else:
+        if risk == "High":
+            target_probs = [55, 30]   # first to Medium, then to Low
+        else:
+            target_probs = [30]       # Medium -> Low
 
-        recommendations.append(
-            f"Increase workforce to around {target_workers} workers to match the project scale."
-        )
-        recommendations.append(
-            f"Extend the project duration to approximately {target_duration} months to reduce schedule pressure."
-        )
-        recommendations.append(
-            "Start critical activities early (materials procurement, approvals, subcontractors)."
-        )
+        # Build two-option recommendations per target (workers OR duration)
+        for tp in target_probs:
+            w_target, w_newprob = _find_target_workers(project_type, project_size, area_m2, duration_months, workers, tp)
+            d_target, d_newprob = _find_target_duration(project_type, project_size, area_m2, duration_months, workers, tp)
 
-    elif risk_level == "Medium":
-        target_workers = max(int(workers * 1.25), workers + 3)
+            # If both found, present both as choices (user-friendly)
+            if w_target is not None and d_target is not None:
+                # choose the "lighter" change to highlight first
+                add_w = w_target - workers
+                add_d = d_target - duration_months
+                if add_w <= 5:
+                    first = f"لو تبين ينزل الخطر لـ {tp}% تقريبًا: زوّدي العمال إلى {w_target} (يعني +{add_w})."
+                    second = f"أو بديل ثاني: زوّدي المدة إلى {d_target} شهر تقريبًا."
+                else:
+                    first = f"لو تبين ينزل الخطر لـ {tp}% تقريبًا: زوّدي المدة إلى {d_target} شهر."
+                    second = f"أو بديل ثاني: زوّدي العمال إلى {w_target} (يعني +{add_w})."
 
-        recommendations.append(
-            f"Increase workforce to about {target_workers} workers during peak phases."
-        )
-        recommendations.append(
-            "Monitor progress weekly and reallocate resources if delays appear."
-        )
+                recommendations.append(first)
+                recommendations.append(second)
 
-    else:  # Low risk
-        recommendations.append(
-            "Current workforce and schedule are well balanced for this project."
-        )
-        recommendations.append(
-            "Continue regular monitoring to maintain steady progress."
-        )
+            elif w_target is not None:
+                add_w = w_target - workers
+                recommendations.append(f"عشان ينزل الخطر لـ {tp}% تقريبًا: زوّدي العمال إلى {w_target} (يعني +{add_w}).")
 
-    # ---------------- Final output ----------------
+            elif d_target is not None:
+                recommendations.append(f"عشان ينزل الخطر لـ {tp}% تقريبًا: زوّدي المدة إلى {d_target} شهر.")
+
+            else:
+                # fallback if model can't reach target within search limits
+                recommendations.append(f"لتقليل الخطر بشكل واضح: زوّدي العمال أو المدة (التغيير البسيط قد لا يكفي هنا).")
+
+        # Always include one practical tip for execution
+        recommendations.append("نصيحة سريعة: رتّبي التوريد والموافقات بدري (هذي أكثر شي يسبب تأخير).")
+
     return {
         "estimated_cost": round(estimated_cost, 0),
-        "delay_probability": round(delay_probability, 1),
-        "risk_level": risk_level,
+        "delay_probability": round(delay_prob, 1),
+        "risk_level": risk,
         "recommendations": recommendations
     }
