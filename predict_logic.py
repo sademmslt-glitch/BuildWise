@@ -3,7 +3,7 @@ import joblib
 import streamlit as st
 
 # =================================================
-# Load models (cached for speed)
+# Load models (cached for performance)
 # =================================================
 @st.cache_resource
 def load_models():
@@ -30,7 +30,7 @@ def _make_features(project_type, project_size, area_m2, duration_months, workers
     return row
 
 # =================================================
-# Delay probability with realism rules
+# Delay probability with domain realism rules
 # =================================================
 def _delay_probability(project_type, project_size, area_m2, duration_months, workers):
     X = _make_features(project_type, project_size, area_m2, duration_months, workers)
@@ -67,19 +67,17 @@ def _risk_level(delay_prob):
         return "High"
 
 # =================================================
-# Smart recommendation helpers (bounded & realistic)
+# Helpers to find realistic improvement options
 # =================================================
 def _find_target_workers(
     project_type, project_size, area_m2, duration_months, workers,
     target_prob, max_extra_workers=15
 ):
-    max_workers = workers + max_extra_workers
-
-    for w in range(workers + 1, max_workers + 1):
+    for w in range(workers + 1, workers + max_extra_workers + 1):
         p = _delay_probability(project_type, project_size, area_m2, duration_months, w)
         if p <= target_prob:
-            return w, p
-    return None, None
+            return w
+    return None
 
 
 def _find_target_duration(
@@ -87,15 +85,12 @@ def _find_target_duration(
     target_prob, max_extra_months=6
 ):
     d = duration_months
-    end = duration_months + max_extra_months
-
-    while d <= end:
+    while d <= duration_months + max_extra_months:
         p = _delay_probability(project_type, project_size, area_m2, d, workers)
         if p <= target_prob:
-            return round(d, 1), p
+            return round(d, 1)
         d += 0.5
-
-    return None, None
+    return None
 
 # =================================================
 # Main prediction function
@@ -106,7 +101,7 @@ def predict(project_type, project_size, area_m2, duration_months, workers):
     X = _make_features(project_type, project_size, area_m2, duration_months, workers)
     estimated_cost = float(cost_model.predict(X)[0])
 
-    # Optional calibration for HVAC
+    # Optional HVAC calibration
     if project_type == "HVAC Installation":
         min_cost = area_m2 * 1800
         max_cost = area_m2 * 4500
@@ -118,42 +113,37 @@ def predict(project_type, project_size, area_m2, duration_months, workers):
     )
     risk = _risk_level(delay_prob)
 
-    # ---------- Recommendations (formal & effective) ----------
+    # ---------- Professional recommendations ----------
     recommendations = []
 
     if risk == "Low":
         recommendations.append(
-            "خطة المشروع الحالية مناسبة. استمر في المتابعة الدورية لضمان الالتزام بالجدول الزمني."
+            "وضع المشروع الحالي مستقر، ولا توجد مؤشرات واضحة على خطر التأخير. يُنصح بالاستمرار في المتابعة الدورية."
         )
 
     else:
-        # Targets
-        targets = [30] if risk == "Medium" else [55, 30]
-
-        for tp in targets:
-            w_target, _ = _find_target_workers(
-                project_type, project_size, area_m2, duration_months, workers, tp
+        # اقتراح العمال
+        w_target = _find_target_workers(
+            project_type, project_size, area_m2, duration_months, workers, 30
+        )
+        if w_target:
+            diff = w_target - workers
+            recommendations.append(
+                f"زيادة عدد العمال بحوالي {diff} عمال قد تساهم في تحسين وتيرة التنفيذ وتقليل الضغط خلال مراحل العمل."
             )
-            d_target, _ = _find_target_duration(
-                project_type, project_size, area_m2, duration_months, workers, tp
+
+        # اقتراح المدة
+        d_target = _find_target_duration(
+            project_type, project_size, area_m2, duration_months, workers, 30
+        )
+        if d_target and d_target > duration_months:
+            recommendations.append(
+                f"تمديد مدة التنفيذ من {duration_months} إلى نحو {d_target} أشهر قد يكون خيارًا أفضل لتقليل مخاطر التأخير."
             )
 
-            if w_target and d_target:
-                recommendations.append(
-                    f"لخفض خطر التأخير إلى مستوى أقرب للاستقرار، يمكنك زيادة عدد العمال إلى حوالي {w_target} عامل "
-                    f"أو تمديد مدة المشروع إلى نحو {d_target} أشهر."
-                )
-            elif w_target:
-                recommendations.append(
-                    f"لخفض خطر التأخير، يُوصى بزيادة عدد العمال إلى حوالي {w_target} عامل خلال مراحل الذروة."
-                )
-            elif d_target:
-                recommendations.append(
-                    f"لخفض خطر التأخير، يُوصى بتمديد مدة المشروع إلى نحو {d_target} أشهر لتقليل ضغط الجدول الزمني."
-                )
-
+        # توصية إدارية واحدة فقط
         recommendations.append(
-            "كما يُنصح ببدء الأنشطة الحرجة مبكرًا، مثل توريد المواد والموافقات، لتقليل احتمالية التعثر أثناء التنفيذ."
+            "يُفضل البدء بالأنشطة الحرجة مبكرًا، مثل توريد المواد والحصول على الموافقات، لتجنب أي تعطل غير متوقع."
         )
 
     return {
