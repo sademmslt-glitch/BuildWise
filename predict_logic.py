@@ -1,88 +1,57 @@
-import joblib
-import pandas as pd
+import pickle
+import numpy as np
 
-# Load models + columns
-cost_model = joblib.load("cost_model.pkl")
-delay_model = joblib.load("delay_model.pkl")
-model_columns = joblib.load("model_columns.pkl")
+# Load models
+cost_model = pickle.load(open("cost_model.pkl", "rb"))
+delay_model = pickle.load(open("delay_model.pkl", "rb"))
+columns = pickle.load(open("model_columns.pkl", "rb"))
 
-def _build_features(project_type, project_size, area_m2, duration_months, workers):
-    # Create empty row with training columns
-    X = pd.DataFrame([{c: 0 for c in model_columns}])
+def predict(project_type, project_size, area, duration, workers):
 
-    # Fill numeric columns if they exist
-    for col, val in {
-        "area_m2": area_m2,
-        "duration_months": duration_months,
-        "workers": workers
-    }.items():
-        if col in X.columns:
-            X.at[0, col] = val
+    x = np.zeros(len(columns))
+    x[columns.index("area_m2")] = area
+    x[columns.index("duration_months")] = duration
+    x[columns.index("workers")] = workers
 
-    # One-hot for categories (handles different training column naming)
-    candidates = [
-        f"project_type_{project_type}",
-        f"project_type__{project_type}",
-        f"project_type={project_type}",
-        project_type,  # fallback if training used raw strings as columns (rare)
-    ]
-    for c in candidates:
-        if c in X.columns:
-            X.at[0, c] = 1
-            break
+    if f"type_{project_type}" in columns:
+        x[columns.index(f"type_{project_type}")] = 1
 
-    candidates = [
-        f"project_size_{project_size}",
-        f"project_size__{project_size}",
-        f"project_size={project_size}",
-        project_size,
-    ]
-    for c in candidates:
-        if c in X.columns:
-            X.at[0, c] = 1
-            break
+    if f"size_{project_size}" in columns:
+        x[columns.index(f"size_{project_size}")] = 1
 
-    return X
+    estimated_cost = float(cost_model.predict([x])[0])
+    delay_prob = round(float(delay_model.predict_proba([x])[0][1]) * 100, 1)
 
-def _risk_level(delay_prob):
-    if delay_prob >= 60:
-        return "High"
-    if delay_prob >= 30:
-        return "Medium"
-    return "Low"
+    if delay_prob < 30:
+        risk = "Low"
+    elif delay_prob < 60:
+        risk = "Medium"
+    else:
+        risk = "High"
 
-def _recommendations(risk, duration_months, workers):
-    recs = []
+    recommendations = []
 
     if risk == "High":
-        recs.append("Add schedule buffer and split tasks into weekly milestones.")
-        if workers < 10:
-            recs.append("Increase workforce or add a backup crew for peak activities.")
-        if duration_months < 2:
-            recs.append("Extend duration to reduce schedule pressure and rework risk.")
-        recs.append("Prioritize long-lead items early (materials, approvals, permits).")
-
+        recommendations = [
+            "Adding a little extra time to the schedule could reduce pressure later on.",
+            "You might consider increasing the workforce during busy phases.",
+            "Ordering materials early can help avoid unexpected waiting.",
+            "Breaking the project into smaller milestones may make tracking easier."
+        ]
     elif risk == "Medium":
-        recs.append("Monitor progress weekly and prepare contingency for delays.")
-        recs.append("Confirm supplier timelines and lock key materials early.")
-
+        recommendations = [
+            "The plan looks reasonable, but keeping a small time buffer could help.",
+            "Regular progress checks may prevent minor delays from growing."
+        ]
     else:
-        recs.append("Plan looks stable. Keep monthly monitoring and quality checks.")
-
-    return recs
-
-def predict(project_type, project_size, area_m2, duration_months, workers):
-    X = _build_features(project_type, project_size, area_m2, duration_months, workers)
-
-    est_cost = float(cost_model.predict(X)[0])
-    delay_prob = float(delay_model.predict_proba(X)[0][1] * 100)
-
-    risk = _risk_level(delay_prob)
-    recs = _recommendations(risk, duration_months, workers)
+        recommendations = [
+            "The project setup looks balanced.",
+            "Just keep monitoring progress as work moves forward."
+        ]
 
     return {
-        "estimated_cost": round(est_cost, 2),
-        "delay_probability": round(delay_prob, 1),
+        "estimated_cost": estimated_cost,
+        "delay_probability": delay_prob,
         "risk_level": risk,
-        "recommendations": recs
+        "recommendations": recommendations
     }
