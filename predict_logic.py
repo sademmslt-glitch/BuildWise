@@ -3,7 +3,7 @@ import joblib
 import streamlit as st
 
 # -------------------------------------------------
-# Load models once (for speed + consistency)
+# Load models once (speed + stability)
 # -------------------------------------------------
 @st.cache_resource
 def load_models():
@@ -15,11 +15,11 @@ def load_models():
 cost_model, delay_model, model_columns = load_models()
 
 # -------------------------------------------------
-# Main prediction logic
+# Main prediction function
 # -------------------------------------------------
 def predict(project_type, project_size, area_m2, duration_months, workers):
 
-    # ---------- Prepare input ----------
+    # ---------------- Prepare input ----------------
     input_data = {
         "project_type": project_type,
         "project_size": project_size,
@@ -32,13 +32,25 @@ def predict(project_type, project_size, area_m2, duration_months, workers):
     df = pd.get_dummies(df)
     df = df.reindex(columns=model_columns, fill_value=0)
 
-    # ---------- Cost prediction ----------
+    # ---------------- Cost prediction ----------------
     estimated_cost = float(cost_model.predict(df)[0])
 
-    # ---------- Delay probability (REAL probability) ----------
-    delay_probability = delay_model.predict_proba(df)[0][1] * 100
+    # ---------------- Delay probability (CORRECT) ----------------
+    # Make sure we read the probability of class = 1 (Delayed)
+    proba = delay_model.predict_proba(df)[0]
+    classes = delay_model.classes_
+    delay_index = list(classes).index(1)   # class "1" means delay
+    delay_probability = proba[delay_index] * 100
 
-    # ---------- Risk level ----------
+    # ---------------- Sanity rules (REALISM LAYER) ----------------
+    # Extreme unrealistic cases must be corrected logically
+    if project_size == "Large" and area_m2 >= 400 and workers <= 3:
+        delay_probability = max(delay_probability, 75.0)
+
+    if project_size == "Medium" and area_m2 >= 250 and workers <= 2:
+        delay_probability = max(delay_probability, 60.0)
+
+    # ---------------- Risk level ----------------
     if delay_probability < 30:
         risk_level = "Low"
     elif delay_probability < 60:
@@ -47,45 +59,45 @@ def predict(project_type, project_size, area_m2, duration_months, workers):
         risk_level = "High"
 
     # -------------------------------------------------
-    # SMART, EFFECTIVE & REALISTIC RECOMMENDATIONS
+    # STRONG & EFFECTIVE RECOMMENDATIONS
     # -------------------------------------------------
     recommendations = []
 
     if risk_level == "High":
-        # High risk needs STRONG adjustment
-        target_workers = int(round(workers * 1.4))
+        # High risk needs MAJOR adjustment
+        target_workers = max(int(workers * 1.5), workers + 7)
         target_duration = round(duration_months * 1.3, 1)
 
         recommendations.append(
-            f"Increase workforce to around {target_workers} workers to significantly reduce workload pressure."
+            f"Increase workforce to around {target_workers} workers to handle project scale properly."
         )
         recommendations.append(
-            f"Extend the project duration to approximately {target_duration} months to stabilize the schedule."
+            f"Extend the project duration to approximately {target_duration} months to reduce schedule pressure."
         )
         recommendations.append(
-            "Prioritize critical activities early (materials, approvals, subcontractors)."
+            "Start critical activities early (materials, approvals, subcontractors)."
         )
 
     elif risk_level == "Medium":
         # Medium risk needs MODERATE adjustment
-        target_workers = int(round(workers * 1.2))
+        target_workers = max(int(workers * 1.25), workers + 3)
 
         recommendations.append(
-            f"Increase workers to about {target_workers} during peak phases to avoid delays."
+            f"Increase workforce to about {target_workers} workers during peak phases."
         )
         recommendations.append(
-            "Conduct weekly progress reviews and adjust resources if needed."
+            "Monitor progress weekly and adjust resources if delays appear."
         )
 
     else:  # Low risk
         recommendations.append(
-            "Current workforce and schedule are well balanced."
+            "Current workforce and schedule are well balanced for this project."
         )
         recommendations.append(
-            "Continue with regular monitoring and planned execution."
+            "Continue regular monitoring to maintain progress."
         )
 
-    # ---------- Final output ----------
+    # ---------------- Final output ----------------
     return {
         "estimated_cost": round(estimated_cost, 0),
         "delay_probability": round(delay_probability, 1),
