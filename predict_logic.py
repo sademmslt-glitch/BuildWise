@@ -3,7 +3,7 @@ import joblib
 import streamlit as st
 
 # -------------------------------------------------
-# Load models once (VERY IMPORTANT for correctness + speed)
+# Load models once (for speed + consistency)
 # -------------------------------------------------
 @st.cache_resource
 def load_models():
@@ -15,7 +15,7 @@ def load_models():
 cost_model, delay_model, model_columns = load_models()
 
 # -------------------------------------------------
-# Main prediction function
+# Main prediction logic
 # -------------------------------------------------
 def predict(project_type, project_size, area_m2, duration_months, workers):
 
@@ -32,11 +32,10 @@ def predict(project_type, project_size, area_m2, duration_months, workers):
     df = pd.get_dummies(df)
     df = df.reindex(columns=model_columns, fill_value=0)
 
-    # ---------- Cost prediction (Regression) ----------
+    # ---------- Cost prediction ----------
     estimated_cost = float(cost_model.predict(df)[0])
 
-    # ---------- Delay prediction (Probability, NOT class) ----------
-    # probability of delay = class 1
+    # ---------- Delay probability (REAL probability) ----------
     delay_probability = delay_model.predict_proba(df)[0][1] * 100
 
     # ---------- Risk level ----------
@@ -47,43 +46,43 @@ def predict(project_type, project_size, area_m2, duration_months, workers):
     else:
         risk_level = "High"
 
-    # ---------- SMART & REALISTIC recommendations ----------
+    # -------------------------------------------------
+    # SMART, EFFECTIVE & REALISTIC RECOMMENDATIONS
+    # -------------------------------------------------
     recommendations = []
 
     if risk_level == "High":
-        extra_workers = max(3, int(workers * 0.2))
-        new_duration = round(duration_months + max(1, duration_months * 0.25), 1)
+        # High risk needs STRONG adjustment
+        target_workers = int(round(workers * 1.4))
+        target_duration = round(duration_months * 1.3, 1)
 
         recommendations.append(
-            f"Add around {extra_workers} more workers to reduce workload pressure."
+            f"Increase workforce to around {target_workers} workers to significantly reduce workload pressure."
         )
         recommendations.append(
-            f"Extend the project duration to about {new_duration} months to avoid delays."
+            f"Extend the project duration to approximately {target_duration} months to stabilize the schedule."
         )
         recommendations.append(
-            "Start material procurement earlier and confirm supplier availability."
+            "Prioritize critical activities early (materials, approvals, subcontractors)."
         )
 
     elif risk_level == "Medium":
+        # Medium risk needs MODERATE adjustment
+        target_workers = int(round(workers * 1.2))
+
         recommendations.append(
-            "The project is manageable, but close monitoring is recommended."
+            f"Increase workers to about {target_workers} during peak phases to avoid delays."
         )
         recommendations.append(
-            "Consider adding 1–2 workers during critical phases."
-        )
-        recommendations.append(
-            "Review the schedule weekly to catch delays early."
+            "Conduct weekly progress reviews and adjust resources if needed."
         )
 
     else:  # Low risk
         recommendations.append(
-            "The project plan looks balanced and realistic."
+            "Current workforce and schedule are well balanced."
         )
         recommendations.append(
-            "Maintain current workforce and timeline."
-        )
-        recommendations.append(
-            "Regular progress tracking should be sufficient."
+            "Continue with regular monitoring and planned execution."
         )
 
     # ---------- Final output ----------
