@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from predict_logic import predict
+import os
 
 # ---------------------------------
 # Page Config
@@ -37,12 +38,12 @@ PROJECT_TYPES = [
     "HVAC Installation",
     "Smart Home System",
     "Security Systems",
-    "FTTH Infrastructure",
     "Digital Screen Installation"
 ]
 
 PROJECT_SIZES = ["Small", "Medium", "Large"]
 ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "buildwise123")
+ADMIN_DATA_FILE = "admin_projects_data.csv"
 
 # =================================
 # USER PAGE
@@ -54,9 +55,40 @@ if page == "User":
 
     project_type = st.selectbox("Project Type", PROJECT_TYPES)
     project_size = st.selectbox("Project Size", PROJECT_SIZES)
-    area_m2 = st.number_input("Project Area (m²)", 50, 200000, 300, step=50)
-    duration_months = st.number_input("Expected Duration (months)", 0.5, 60.0, 3.0, step=0.5)
-    workers = st.number_input("Number of Workers", 1, 500, 10)
+
+    # ✅ عدد الشاشات يظهر فقط للديجتال سكرين
+    num_screens = 0
+    if project_type == "Digital Screen Installation":
+        num_screens = st.number_input(
+            "Number of Digital Screens",
+            min_value=1,
+            max_value=4,
+            value=2,
+            step=1
+        )
+
+    area_m2 = st.number_input(
+        "Project Area (m²)",
+        min_value=50,
+        max_value=200000,
+        value=300,
+        step=50
+    )
+
+    duration_months = st.number_input(
+        "Expected Duration (months)",
+        min_value=0.5,
+        max_value=60.0,
+        value=3.0,
+        step=0.5
+    )
+
+    workers = st.number_input(
+        "Number of Workers",
+        min_value=1,
+        max_value=500,
+        value=10
+    )
 
     if st.button("Go 🚀"):
 
@@ -66,23 +98,24 @@ if page == "User":
                 project_size,
                 area_m2,
                 duration_months,
-                workers
+                workers,
+                num_screens
             )
 
-        # ---------------- Cost Range (X to Y) ----------------
-        # تقدير نطاق بسيط حول التكلفة (±10%)
+        # ---------------- Cost Range ----------------
         cost = float(result["estimated_cost"])
-        margin = 0.10  # تقدرين تغيرينه إلى 0.08 أو 0.12 حسب رغبتك
+        margin = 0.10
         cost_low = cost * (1 - margin)
         cost_high = cost * (1 + margin)
 
-        # Save predicted project (for Admin analysis)
+        # Save prediction
         st.session_state.predicted_projects.append({
             "Project Type": project_type,
             "Project Size": project_size,
             "Area (m²)": area_m2,
             "Duration (months)": duration_months,
             "Workers": workers,
+            "Number of Screens": num_screens if project_type == "Digital Screen Installation" else "-",
             "Estimated Cost (SAR)": round(cost, 0),
             "Cost Range (SAR)": f"{cost_low:,.0f} – {cost_high:,.0f}",
             "Delay Probability (%)": result["delay_probability"],
@@ -92,18 +125,10 @@ if page == "User":
         # ---------------- Results ----------------
         st.subheader("Project Results")
 
-        st.metric(
-            "Estimated Cost (SAR)",
-            f"{cost:,.0f}"
-        )
-
-        # ✅ NEW: show cost range
+        st.metric("Estimated Cost (SAR)", f"{cost:,.0f}")
         st.caption(f"Expected Cost Range: **{cost_low:,.0f} – {cost_high:,.0f} SAR**")
 
-        st.metric(
-            "Delay Probability",
-            f"{result['delay_probability']}%"
-        )
+        st.metric("Delay Probability", f"{result['delay_probability']}%")
 
         if result["risk_level"] == "Low":
             st.success("🟢 Low Delay Risk")
@@ -132,44 +157,36 @@ else:
     st.success("Welcome, Admin")
 
     # ---------------------------------
-    # ANALYTICAL TABLE (Predictions)
+    # Predicted Projects Table
     # ---------------------------------
     st.subheader("📊 Predicted Projects Analysis")
 
     if st.session_state.predicted_projects:
         df_pred = pd.DataFrame(st.session_state.predicted_projects)
 
-        # Overview Metrics
-        total = len(df_pred)
-        high = len(df_pred[df_pred["Risk Level"] == "High"])
-        medium = len(df_pred[df_pred["Risk Level"] == "Medium"])
-        low = len(df_pred[df_pred["Risk Level"] == "Low"])
-
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total Predicted", total)
-        c2.metric("High Risk", high)
-        c3.metric("Medium Risk", medium)
-        c4.metric("Low Risk", low)
+        c1.metric("Total Predicted", len(df_pred))
+        c2.metric("High Risk", len(df_pred[df_pred["Risk Level"] == "High"]))
+        c3.metric("Medium Risk", len(df_pred[df_pred["Risk Level"] == "Medium"]))
+        c4.metric("Low Risk", len(df_pred[df_pred["Risk Level"] == "Low"]))
 
-        # ✅ الجدول التحليلي يشمل Cost Range
         st.dataframe(df_pred, use_container_width=True)
-
     else:
         st.info("No predicted projects yet.")
 
     # ---------------------------------
-    # COMPANY PROJECTS (ADMIN INPUT)
+    # Stored Company Projects
     # ---------------------------------
-    st.subheader("🏢 Company Projects (Administrative)")
+    st.subheader("🏢 Stored Company Projects")
 
-    if st.session_state.company_projects:
-        df_company = pd.DataFrame(st.session_state.company_projects)
+    if os.path.exists(ADMIN_DATA_FILE):
+        df_company = pd.read_csv(ADMIN_DATA_FILE)
         st.dataframe(df_company, use_container_width=True)
     else:
-        st.info("No company projects added yet.")
+        st.info("No company projects stored yet.")
 
     # ---------------------------------
-    # ADD COMPANY PROJECT FORM
+    # Add Company Project
     # ---------------------------------
     st.subheader("➕ Add Company Project")
 
@@ -189,12 +206,22 @@ else:
         add = st.form_submit_button("Add Project")
 
         if add:
-            st.session_state.company_projects.append({
-                "Project Type": p_type,
-                "Area (m²)": p_area,
-                "Duration (months)": p_duration,
-                "Workers": p_workers,
-                "Estimated Cost (SAR)": f"{p_cost:,.0f}",
-                "Status": "Planning"
-            })
-            st.success("Company project added successfully.")
+            new_project = {
+                "project_type": p_type,
+                "area_m2": p_area,
+                "duration_months": p_duration,
+                "workers": p_workers,
+                "estimated_cost_sar": p_cost,
+                "delay": None
+            }
+
+            # حفظ في CSV
+            if os.path.exists(ADMIN_DATA_FILE):
+                df_existing = pd.read_csv(ADMIN_DATA_FILE)
+                df_updated = pd.concat([df_existing, pd.DataFrame([new_project])], ignore_index=True)
+            else:
+                df_updated = pd.DataFrame([new_project])
+
+            df_updated.to_csv(ADMIN_DATA_FILE, index=False)
+
+            st.success("✅ Project added and stored for future model improvement.")
