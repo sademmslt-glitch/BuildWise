@@ -18,9 +18,6 @@ st.set_page_config(
 if "predicted_projects" not in st.session_state:
     st.session_state.predicted_projects = []
 
-if "company_projects" not in st.session_state:
-    st.session_state.company_projects = []
-
 # ---------------------------------
 # Sidebar
 # ---------------------------------
@@ -54,28 +51,18 @@ if page == "User":
     st.caption("Clear insights to plan your construction project with confidence.")
 
     # ---------- Inputs ----------
-    project_type = st.selectbox(
-        "Project Type",
-        PROJECT_TYPES,
-        key="project_type"
-    )
-
-    project_size = st.selectbox(
-        "Project Size",
-        PROJECT_SIZES,
-        key="project_size"
-    )
+    project_type = st.selectbox("Project Type", PROJECT_TYPES)
+    project_size = st.selectbox("Project Size", PROJECT_SIZES)
 
     # ---------- Digital Screens (Dynamic) ----------
     num_screens = 0
-    if st.session_state.project_type == "Digital Screen Installation":
+    if project_type == "Digital Screen Installation":
         num_screens = st.number_input(
             "Number of Digital Screens",
             min_value=1,
             max_value=4,
             value=2,
-            step=1,
-            key="num_screens"
+            step=1
         )
 
     area_m2 = st.number_input(
@@ -83,8 +70,7 @@ if page == "User":
         min_value=50,
         max_value=200000,
         value=300,
-        step=50,
-        key="area_m2"
+        step=50
     )
 
     duration_months = st.number_input(
@@ -92,16 +78,14 @@ if page == "User":
         min_value=0.5,
         max_value=60.0,
         value=3.0,
-        step=0.5,
-        key="duration_months"
+        step=0.5
     )
 
     workers = st.number_input(
         "Number of Workers",
         min_value=1,
         max_value=500,
-        value=10,
-        key="workers"
+        value=10
     )
 
     # ---------- Prediction ----------
@@ -195,43 +179,3 @@ else:
         st.dataframe(df_company, use_container_width=True)
     else:
         st.info("No company projects stored yet.")
-
-    # ---------- Add Company Project ----------
-    st.subheader("➕ Add Company Project")
-
-    with st.form("add_company_project"):
-        p_type = st.selectbox("Project Type", PROJECT_TYPES)
-        p_area = st.number_input("Area (m²)", 50, 200000, 300, step=50)
-        p_duration = st.number_input("Duration (months)", 0.5, 60.0, 3.0, step=0.5)
-        p_workers = st.number_input("Workers", 1, 500, 10)
-
-        p_cost = st.number_input(
-            "Estimated Budget (SAR)",
-            min_value=0,
-            step=10000,
-            value=500000
-        )
-
-        add = st.form_submit_button("Add Project")
-
-        if add:
-            new_project = {
-                "project_type": p_type,
-                "area_m2": p_area,
-                "duration_months": p_duration,
-                "workers": p_workers,
-                "estimated_cost_sar": p_cost,
-                "delay": None
-            }
-
-            if os.path.exists(ADMIN_DATA_FILE):
-                df_existing = pd.read_csv(ADMIN_DATA_FILE)
-                df_updated = pd.concat(
-                    [df_existing, pd.DataFrame([new_project])],
-                    ignore_index=True
-                )
-            else:
-                df_updated = pd.DataFrame([new_project])
-
-            df_updated.to_csv(ADMIN_DATA_FILE, index=False)
-            st.success("✅ Project added and stored for future model improvement.")
