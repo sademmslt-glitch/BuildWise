@@ -53,18 +53,29 @@ if page == "User":
     st.title("BuildWise")
     st.caption("Clear insights to plan your construction project with confidence.")
 
-    project_type = st.selectbox("Project Type", PROJECT_TYPES)
-    project_size = st.selectbox("Project Size", PROJECT_SIZES)
+    # ---------- Inputs ----------
+    project_type = st.selectbox(
+        "Project Type",
+        PROJECT_TYPES,
+        key="project_type"
+    )
 
-    # ✅ عدد الشاشات يظهر فقط للديجتال سكرين
+    project_size = st.selectbox(
+        "Project Size",
+        PROJECT_SIZES,
+        key="project_size"
+    )
+
+    # ---------- Digital Screens (Dynamic) ----------
     num_screens = 0
-    if project_type == "Digital Screen Installation":
+    if st.session_state.project_type == "Digital Screen Installation":
         num_screens = st.number_input(
             "Number of Digital Screens",
             min_value=1,
             max_value=4,
             value=2,
-            step=1
+            step=1,
+            key="num_screens"
         )
 
     area_m2 = st.number_input(
@@ -72,7 +83,8 @@ if page == "User":
         min_value=50,
         max_value=200000,
         value=300,
-        step=50
+        step=50,
+        key="area_m2"
     )
 
     duration_months = st.number_input(
@@ -80,16 +92,19 @@ if page == "User":
         min_value=0.5,
         max_value=60.0,
         value=3.0,
-        step=0.5
+        step=0.5,
+        key="duration_months"
     )
 
     workers = st.number_input(
         "Number of Workers",
         min_value=1,
         max_value=500,
-        value=10
+        value=10,
+        key="workers"
     )
 
+    # ---------- Prediction ----------
     if st.button("Go 🚀"):
 
         with st.spinner("Analyzing project..."):
@@ -102,13 +117,13 @@ if page == "User":
                 num_screens
             )
 
-        # ---------------- Cost Range ----------------
+        # ---------- Cost Range ----------
         cost = float(result["estimated_cost"])
         margin = 0.10
         cost_low = cost * (1 - margin)
         cost_high = cost * (1 + margin)
 
-        # Save prediction
+        # ---------- Save Prediction ----------
         st.session_state.predicted_projects.append({
             "Project Type": project_type,
             "Project Size": project_size,
@@ -122,7 +137,7 @@ if page == "User":
             "Risk Level": result["risk_level"]
         })
 
-        # ---------------- Results ----------------
+        # ---------- Results ----------
         st.subheader("Project Results")
 
         st.metric("Estimated Cost (SAR)", f"{cost:,.0f}")
@@ -156,9 +171,7 @@ else:
 
     st.success("Welcome, Admin")
 
-    # ---------------------------------
-    # Predicted Projects Table
-    # ---------------------------------
+    # ---------- Predicted Projects ----------
     st.subheader("📊 Predicted Projects Analysis")
 
     if st.session_state.predicted_projects:
@@ -174,9 +187,7 @@ else:
     else:
         st.info("No predicted projects yet.")
 
-    # ---------------------------------
-    # Stored Company Projects
-    # ---------------------------------
+    # ---------- Stored Company Projects ----------
     st.subheader("🏢 Stored Company Projects")
 
     if os.path.exists(ADMIN_DATA_FILE):
@@ -185,9 +196,7 @@ else:
     else:
         st.info("No company projects stored yet.")
 
-    # ---------------------------------
-    # Add Company Project
-    # ---------------------------------
+    # ---------- Add Company Project ----------
     st.subheader("➕ Add Company Project")
 
     with st.form("add_company_project"):
@@ -215,13 +224,14 @@ else:
                 "delay": None
             }
 
-            # حفظ في CSV
             if os.path.exists(ADMIN_DATA_FILE):
                 df_existing = pd.read_csv(ADMIN_DATA_FILE)
-                df_updated = pd.concat([df_existing, pd.DataFrame([new_project])], ignore_index=True)
+                df_updated = pd.concat(
+                    [df_existing, pd.DataFrame([new_project])],
+                    ignore_index=True
+                )
             else:
                 df_updated = pd.DataFrame([new_project])
 
             df_updated.to_csv(ADMIN_DATA_FILE, index=False)
-
             st.success("✅ Project added and stored for future model improvement.")
