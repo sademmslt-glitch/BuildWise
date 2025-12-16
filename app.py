@@ -54,16 +54,19 @@ if page == "User":
     project_type = st.selectbox("Project Type", PROJECT_TYPES)
     project_size = st.selectbox("Project Size", PROJECT_SIZES)
 
-    # ---------- Digital Screens (Dynamic) ----------
+    # ---------- Dynamic Container ----------
+    screen_container = st.container()
     num_screens = 0
-    if project_type == "Digital Screen Installation":
-        num_screens = st.number_input(
-            "Number of Digital Screens",
-            min_value=1,
-            max_value=4,
-            value=2,
-            step=1
-        )
+
+    with screen_container:
+        if project_type == "Digital Screen Installation":
+            num_screens = st.number_input(
+                "Number of Digital Screens",
+                min_value=1,
+                max_value=4,
+                value=2,
+                step=1
+            )
 
     area_m2 = st.number_input(
         "Project Area (m²)",
@@ -155,27 +158,10 @@ else:
 
     st.success("Welcome, Admin")
 
-    # ---------- Predicted Projects ----------
     st.subheader("📊 Predicted Projects Analysis")
 
     if st.session_state.predicted_projects:
         df_pred = pd.DataFrame(st.session_state.predicted_projects)
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total Predicted", len(df_pred))
-        c2.metric("High Risk", len(df_pred[df_pred["Risk Level"] == "High"]))
-        c3.metric("Medium Risk", len(df_pred[df_pred["Risk Level"] == "Medium"]))
-        c4.metric("Low Risk", len(df_pred[df_pred["Risk Level"] == "Low"]))
-
         st.dataframe(df_pred, use_container_width=True)
     else:
         st.info("No predicted projects yet.")
-
-    # ---------- Stored Company Projects ----------
-    st.subheader("🏢 Stored Company Projects")
-
-    if os.path.exists(ADMIN_DATA_FILE):
-        df_company = pd.read_csv(ADMIN_DATA_FILE)
-        st.dataframe(df_company, use_container_width=True)
-    else:
-        st.info("No company projects stored yet.")
