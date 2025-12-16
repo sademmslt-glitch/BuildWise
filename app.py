@@ -45,7 +45,6 @@ PROJECT_TYPES = [
 PROJECT_SIZES = ["Small", "Medium", "Large"]
 ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "buildwise123")
 ADMIN_DATA_FILE = "admin_projects_data.csv"
-
 # =================================
 # USER PAGE
 # =================================
@@ -54,65 +53,55 @@ if page == "User":
     st.title("BuildWise")
     st.caption("Clear insights to plan your construction project with confidence.")
 
-    project_type = st.selectbox(
-        "Project Type",
-        PROJECT_TYPES,
-        key="project_type"
-    )
+    with st.form("project_form"):
 
-    project_size = st.selectbox(
-        "Project Size",
-        PROJECT_SIZES,
-        key="project_size"
-    )
+        project_type = st.selectbox(
+            "Project Type",
+            PROJECT_TYPES
+        )
 
-    # 🔹 نجهّز مكان فاضي
-    screen_container = st.empty()
+        project_size = st.selectbox(
+            "Project Size",
+            PROJECT_SIZES
+        )
 
-    # 🔹 قيمة افتراضية
-    num_screens = 0
-
-    # 🔹 نرسم الخانة ديناميكيًا
-    if project_type == "Digital Screen Installation":
-        with screen_container:
+        # ✅ هذا الآن سيظهر 100%
+        num_screens = 0
+        if project_type == "Digital Screen Installation":
             num_screens = st.number_input(
                 "Number of Digital Screens",
                 min_value=1,
                 max_value=4,
                 value=2,
-                step=1,
-                key="num_screens"
+                step=1
             )
-    else:
-        screen_container.empty()
 
-    area_m2 = st.number_input(
-        "Project Area (m²)",
-        min_value=50,
-        max_value=200000,
-        value=300,
-        step=50,
-        key="area_m2"
-    )
+        area_m2 = st.number_input(
+            "Project Area (m²)",
+            min_value=50,
+            max_value=200000,
+            value=300,
+            step=50
+        )
 
-    duration_months = st.number_input(
-        "Expected Duration (months)",
-        min_value=0.5,
-        max_value=60.0,
-        value=3.0,
-        step=0.5,
-        key="duration_months"
-    )
+        duration_months = st.number_input(
+            "Expected Duration (months)",
+            min_value=0.5,
+            max_value=60.0,
+            value=3.0,
+            step=0.5
+        )
 
-    workers = st.number_input(
-        "Number of Workers",
-        min_value=1,
-        max_value=500,
-        value=10,
-        key="workers"
-    )
+        workers = st.number_input(
+            "Number of Workers",
+            min_value=1,
+            max_value=500,
+            value=10
+        )
 
-    if st.button("Go 🚀"):
+        submit = st.form_submit_button("Go 🚀")
+
+    if submit:
 
         with st.spinner("Analyzing project..."):
             result = predict(
@@ -128,19 +117,6 @@ if page == "User":
         margin = 0.10
         cost_low = cost * (1 - margin)
         cost_high = cost * (1 + margin)
-
-        st.session_state.predicted_projects.append({
-            "Project Type": project_type,
-            "Project Size": project_size,
-            "Area (m²)": area_m2,
-            "Duration (months)": duration_months,
-            "Workers": workers,
-            "Number of Screens": num_screens if project_type == "Digital Screen Installation" else "-",
-            "Estimated Cost (SAR)": round(cost, 0),
-            "Cost Range (SAR)": f"{cost_low:,.0f} – {cost_high:,.0f}",
-            "Delay Probability (%)": result["delay_probability"],
-            "Risk Level": result["risk_level"]
-        })
 
         st.subheader("Project Results")
 
