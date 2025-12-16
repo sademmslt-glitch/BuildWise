@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from predict_logic import predict
-import os
 
 # ---------------------------------
 # Page Config
@@ -17,6 +16,9 @@ st.set_page_config(
 # ---------------------------------
 if "predicted_projects" not in st.session_state:
     st.session_state.predicted_projects = []
+
+if "company_projects" not in st.session_state:
+    st.session_state.company_projects = []
 
 # ---------------------------------
 # Sidebar
@@ -40,7 +42,6 @@ PROJECT_TYPES = [
 
 PROJECT_SIZES = ["Small", "Medium", "Large"]
 ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "buildwise123")
-ADMIN_DATA_FILE = "admin_projects_data.csv"
 
 # =================================
 # USER PAGE
@@ -54,19 +55,17 @@ if page == "User":
     project_type = st.selectbox("Project Type", PROJECT_TYPES)
     project_size = st.selectbox("Project Size", PROJECT_SIZES)
 
-    # ---------- Dynamic Container ----------
-    screen_container = st.container()
-    num_screens = 0
-
-    with screen_container:
-        if project_type == "Digital Screen Installation":
-            num_screens = st.number_input(
-                "Number of Digital Screens",
-                min_value=1,
-                max_value=4,
-                value=2,
-                step=1
-            )
+    # ✅ يظهر فقط عند اختيار Digital Screen Installation
+    if project_type == "Digital Screen Installation":
+        num_screens = st.number_input(
+            "Number of Digital Screens",
+            min_value=1,
+            max_value=4,
+            value=2,
+            step=1
+        )
+    else:
+        num_screens = 0
 
     area_m2 = st.number_input(
         "Project Area (m²)",
@@ -158,10 +157,56 @@ else:
 
     st.success("Welcome, Admin")
 
+    # ---------- Predicted Projects ----------
     st.subheader("📊 Predicted Projects Analysis")
 
     if st.session_state.predicted_projects:
         df_pred = pd.DataFrame(st.session_state.predicted_projects)
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Predicted", len(df_pred))
+        c2.metric("High Risk", len(df_pred[df_pred["Risk Level"] == "High"]))
+        c3.metric("Medium Risk", len(df_pred[df_pred["Risk Level"] == "Medium"]))
+        c4.metric("Low Risk", len(df_pred[df_pred["Risk Level"] == "Low"]))
+
         st.dataframe(df_pred, use_container_width=True)
     else:
         st.info("No predicted projects yet.")
+
+    # ---------- Company Projects ----------
+    st.subheader("🏢 Company Projects")
+
+    if st.session_state.company_projects:
+        df_company = pd.DataFrame(st.session_state.company_projects)
+        st.dataframe(df_company, use_container_width=True)
+    else:
+        st.info("No company projects added yet.")
+
+    # ---------- Add Company Project ----------
+    st.subheader("➕ Add Company Project")
+
+    with st.form("add_company_project"):
+        p_type = st.selectbox("Project Type", PROJECT_TYPES)
+        p_area = st.number_input("Area (m²)", 50, 200000, 300, step=50)
+        p_duration = st.number_input("Duration (months)", 0.5, 60.0, 3.0, step=0.5)
+        p_workers = st.number_input("Workers", 1, 500, 10)
+
+        p_cost = st.number_input(
+            "Estimated Budget (SAR)",
+            min_value=0,
+            step=10000,
+            value=500000
+        )
+
+        add = st.form_submit_button("Add Project")
+
+        if add:
+            st.session_state.company_projects.append({
+                "Project Type": p_type,
+                "Area (m²)": p_area,
+                "Duration (months)": p_duration,
+                "Workers": p_workers,
+                "Estimated Cost (SAR)": f"{p_cost:,.0f}",
+                "Status": "Planning"
+            })
+            st.success("Company project added successfully.")
