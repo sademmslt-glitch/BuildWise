@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from predict_logic import predict
+import os
 
 # ---------------------------------
 # Page Config
@@ -37,11 +38,13 @@ PROJECT_TYPES = [
     "HVAC Installation",
     "Smart Home System",
     "Security Systems",
-    "Digital Screen Installation"
+    "FTTH Infrastructure",
+    "Digital Screen Installation",
 ]
 
 PROJECT_SIZES = ["Small", "Medium", "Large"]
 ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "buildwise123")
+ADMIN_DATA_FILE = "admin_projects_data.csv"
 
 # =================================
 # USER PAGE
@@ -51,67 +54,32 @@ if page == "User":
     st.title("BuildWise")
     st.caption("Clear insights to plan your construction project with confidence.")
 
-    project_type = st.selectbox("Project Type", PROJECT_TYPES)
-    project_size = st.selectbox("Project Size", PROJECT_SIZES)
+    # ✅ الحل المضمون لظهور عدد الشاشات: داخل form
+    with st.form("user_project_form"):
 
-    # -------------------------------
-    # Digital Screens Logic
-    # -------------------------------
-    num_screens = 0
-    auto_area = False
+        project_type = st.selectbox("Project Type", PROJECT_TYPES)
+        project_size = st.selectbox("Project Size", PROJECT_SIZES)
 
-    if project_type == "Digital Screen Installation":
-        num_screens = st.number_input(
-            "Number of Digital Screens",
-            min_value=1,
-            max_value=4,
-            value=2,
-            step=1
-        )
-        auto_area = True
+        # يظهر فقط عند اختيار Digital Screen
+        num_screens = 0
+        if project_type == "Digital Screen Installation":
+            num_screens = st.number_input(
+                "Number of Digital Screens",
+                min_value=1,
+                max_value=20,
+                value=2,
+                step=1
+            )
 
-    # -------------------------------
-    # Area
-    # -------------------------------
-    if auto_area:
-        # مساحة منطقية: كل شاشة 50–70 م²
-        area_m2 = num_screens * 60
-        st.number_input(
-            "Project Area (m²)",
-            value=area_m2,
-            disabled=True
-        )
-        st.caption("Area calculated automatically based on number of screens.")
-    else:
-        area_m2 = st.number_input(
-            "Project Area (m²)",
-            min_value=50,
-            max_value=200000,
-            value=300,
-            step=50
-        )
+        area_m2 = st.number_input("Project Area (m²)", 50, 200000, 300, step=50)
+        duration_months = st.number_input("Expected Duration (months)", 0.5, 60.0, 3.0, step=0.5)
+        workers = st.number_input("Number of Workers", 1, 500, 10)
 
-    duration_months = st.number_input(
-        "Expected Duration (months)",
-        min_value=0.5,
-        max_value=60.0,
-        value=3.0,
-        step=0.5
-    )
+        submit_user = st.form_submit_button("Go 🚀")
 
-    workers = st.number_input(
-        "Number of Workers",
-        min_value=1,
-        max_value=500,
-        value=10
-    )
-
-    # -------------------------------
-    # Predict
-    # -------------------------------
-    if st.button("Go 🚀"):
-
+    if submit_user:
         with st.spinner("Analyzing project..."):
+            # مهم: predict لازم يقبل num_screens (إذا ما يقبله بيطلع TypeError)
             result = predict(
                 project_type,
                 project_size,
@@ -121,18 +89,11 @@ if page == "User":
                 num_screens
             )
 
-        # ---------------- Cost Logic ----------------
         cost = float(result["estimated_cost"])
-
-        # تكلفة إضافية لكل شاشة (منطقية)
-        if project_type == "Digital Screen Installation":
-            cost += num_screens * 25000
-
         margin = 0.10
         cost_low = cost * (1 - margin)
         cost_high = cost * (1 + margin)
 
-        # ---------------- Save Prediction ----------------
         st.session_state.predicted_projects.append({
             "Project Type": project_type,
             "Project Size": project_size,
@@ -146,12 +107,9 @@ if page == "User":
             "Risk Level": result["risk_level"]
         })
 
-        # ---------------- Results ----------------
         st.subheader("Project Results")
-
         st.metric("Estimated Cost (SAR)", f"{cost:,.0f}")
         st.caption(f"Expected Cost Range: **{cost_low:,.0f} – {cost_high:,.0f} SAR**")
-
         st.metric("Delay Probability", f"{result['delay_probability']}%")
 
         if result["risk_level"] == "Low":
@@ -171,14 +129,13 @@ if page == "User":
 else:
 
     st.title("🔐 Admin Dashboard")
-
     password = st.text_input("Admin Password", type="password")
 
     if password != ADMIN_PASSWORD:
         st.info("Enter admin password to continue.")
         st.stop()
 
-    st.success("Welcome, Admin")
+    st.success("Welcome, Admin ✅")
 
     # ---------------------------------
     # Predicted Projects Analysis
@@ -200,48 +157,70 @@ else:
         c4.metric("Low Risk", low)
 
         st.dataframe(df_pred, use_container_width=True)
-
     else:
         st.info("No predicted projects yet.")
 
     # ---------------------------------
-    # Company Projects
+    # Stored Company Projects (CSV)
     # ---------------------------------
-    st.subheader("🏢 Company Projects")
+    st.subheader("🏢 Stored Company Projects")
 
-    if st.session_state.company_projects:
-        df_company = pd.DataFrame(st.session_state.company_projects)
+    if os.path.exists(ADMIN_DATA_FILE):
+        df_company = pd.read_csv(ADMIN_DATA_FILE)
         st.dataframe(df_company, use_container_width=True)
     else:
-        st.info("No company projects added yet.")
+        st.info("No company projects stored yet.")
 
     # ---------------------------------
-    # Add Company Project
+    # Add Company Project Form (Admin)
     # ---------------------------------
     st.subheader("➕ Add Company Project")
 
     with st.form("add_company_project"):
-        p_type = st.selectbox("Project Type", PROJECT_TYPES)
-        p_area = st.number_input("Area (m²)", 50, 200000, 300, step=50)
-        p_duration = st.number_input("Duration (months)", 0.5, 60.0, 3.0, step=0.5)
-        p_workers = st.number_input("Workers", 1, 500, 10)
+        p_type = st.selectbox("Project Type", PROJECT_TYPES, key="admin_type")
+
+        # ✅ لو الادمن اختار Digital Screen برضو يظهر عدد الشاشات
+        p_screens = 0
+        if p_type == "Digital Screen Installation":
+            p_screens = st.number_input(
+                "Number of Digital Screens",
+                min_value=1,
+                max_value=20,
+                value=2,
+                step=1,
+                key="admin_screens"
+            )
+
+        p_area = st.number_input("Area (m²)", 50, 200000, 300, step=50, key="admin_area")
+        p_duration = st.number_input("Duration (months)", 0.5, 60.0, 3.0, step=0.5, key="admin_duration")
+        p_workers = st.number_input("Workers", 1, 500, 10, key="admin_workers")
 
         p_cost = st.number_input(
             "Estimated Budget (SAR)",
             min_value=0,
             step=10000,
-            value=500000
+            value=500000,
+            key="admin_cost"
         )
 
         add = st.form_submit_button("Add Project")
 
-        if add:
-            st.session_state.company_projects.append({
-                "Project Type": p_type,
-                "Area (m²)": p_area,
-                "Duration (months)": p_duration,
-                "Workers": p_workers,
-                "Estimated Cost (SAR)": f"{p_cost:,.0f}",
-                "Status": "Planning"
-            })
-            st.success("Company project added successfully.")
+    if add:
+        new_project = {
+            "project_type": p_type,
+            "area_m2": p_area,
+            "duration_months": p_duration,
+            "workers": p_workers,
+            "num_screens": p_screens if p_type == "Digital Screen Installation" else 0,
+            "estimated_cost_sar": p_cost,
+            "delay": None
+        }
+
+        if os.path.exists(ADMIN_DATA_FILE):
+            df_existing = pd.read_csv(ADMIN_DATA_FILE)
+            df_updated = pd.concat([df_existing, pd.DataFrame([new_project])], ignore_index=True)
+        else:
+            df_updated = pd.DataFrame([new_project])
+
+        df_updated.to_csv(ADMIN_DATA_FILE, index=False)
+        st.success("✅ Project added and stored successfully.")
