@@ -55,7 +55,8 @@ if page == "User":
     project_type = st.selectbox("Project Type", PROJECT_TYPES)
     project_size = st.selectbox("Project Size", PROJECT_SIZES)
 
-    # ✅ يظهر فقط عند اختيار Digital Screen Installation
+    # ✅ عدد الشاشات (يظهر فورًا بدون session_state)
+    num_screens = 0
     if project_type == "Digital Screen Installation":
         num_screens = st.number_input(
             "Number of Digital Screens",
@@ -64,8 +65,6 @@ if page == "User":
             value=2,
             step=1
         )
-    else:
-        num_screens = 0
 
     area_m2 = st.number_input(
         "Project Area (m²)",
@@ -128,7 +127,6 @@ if page == "User":
 
         st.metric("Estimated Cost (SAR)", f"{cost:,.0f}")
         st.caption(f"Expected Cost Range: **{cost_low:,.0f} – {cost_high:,.0f} SAR**")
-
         st.metric("Delay Probability", f"{result['delay_probability']}%")
 
         if result["risk_level"] == "Low":
@@ -148,7 +146,6 @@ if page == "User":
 else:
 
     st.title("🔐 Admin Dashboard")
-
     password = st.text_input("Admin Password", type="password")
 
     if password != ADMIN_PASSWORD:
@@ -157,17 +154,22 @@ else:
 
     st.success("Welcome, Admin")
 
-    # ---------- Predicted Projects ----------
+    # ---------- Predicted Projects Analysis ----------
     st.subheader("📊 Predicted Projects Analysis")
 
     if st.session_state.predicted_projects:
         df_pred = pd.DataFrame(st.session_state.predicted_projects)
 
+        total = len(df_pred)
+        high = len(df_pred[df_pred["Risk Level"] == "High"])
+        medium = len(df_pred[df_pred["Risk Level"] == "Medium"])
+        low = len(df_pred[df_pred["Risk Level"] == "Low"])
+
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total Predicted", len(df_pred))
-        c2.metric("High Risk", len(df_pred[df_pred["Risk Level"] == "High"]))
-        c3.metric("Medium Risk", len(df_pred[df_pred["Risk Level"] == "Medium"]))
-        c4.metric("Low Risk", len(df_pred[df_pred["Risk Level"] == "Low"]))
+        c1.metric("Total Predicted", total)
+        c2.metric("High Risk", high)
+        c3.metric("Medium Risk", medium)
+        c4.metric("Low Risk", low)
 
         st.dataframe(df_pred, use_container_width=True)
     else:
@@ -187,6 +189,17 @@ else:
 
     with st.form("add_company_project"):
         p_type = st.selectbox("Project Type", PROJECT_TYPES)
+
+        p_screens = 0
+        if p_type == "Digital Screen Installation":
+            p_screens = st.number_input(
+                "Number of Digital Screens",
+                min_value=1,
+                max_value=4,
+                value=2,
+                step=1
+            )
+
         p_area = st.number_input("Area (m²)", 50, 200000, 300, step=50)
         p_duration = st.number_input("Duration (months)", 0.5, 60.0, 3.0, step=0.5)
         p_workers = st.number_input("Workers", 1, 500, 10)
@@ -206,6 +219,7 @@ else:
                 "Area (m²)": p_area,
                 "Duration (months)": p_duration,
                 "Workers": p_workers,
+                "Number of Screens": p_screens if p_type == "Digital Screen Installation" else "-",
                 "Estimated Cost (SAR)": f"{p_cost:,.0f}",
                 "Status": "Planning"
             })
